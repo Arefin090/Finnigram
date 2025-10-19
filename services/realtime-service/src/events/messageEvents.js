@@ -142,30 +142,30 @@ const handleRedisEvents = (io, subscriber) => {
   subscriber.subscribe('new_message', (message) => {
     const messageData = JSON.parse(message);
     
-    // Broadcast to all users in the conversation
-    io.to(`conversation_${messageData.conversation_id}`).emit('new_message', messageData);
+    // Broadcast to all users in the conversation, including the sender
+    io.in(`conversation_${messageData.conversation_id}`).emit('new_message', messageData);
     
-    logger.info(`Broadcasted new message ${messageData.id} to conversation ${messageData.conversation_id}`);
+    logger.info(`Broadcasted new message ${messageData.id} to conversation ${messageData.conversation_id} (including sender)`);
   });
 
   // Message updated event
   subscriber.subscribe('message_updated', (message) => {
     const messageData = JSON.parse(message);
     
-    // Broadcast to all users in the conversation
-    io.to(`conversation_${messageData.conversation_id}`).emit('message_updated', messageData);
+    // Broadcast to all users in the conversation, including the sender
+    io.in(`conversation_${messageData.conversation_id}`).emit('message_updated', messageData);
     
-    logger.info(`Broadcasted message update ${messageData.id}`);
+    logger.info(`Broadcasted message update ${messageData.id} (including sender)`);
   });
 
   // Message deleted event
   subscriber.subscribe('message_deleted', (message) => {
     const deleteData = JSON.parse(message);
     
-    // Broadcast to all users in the conversation
-    io.to(`conversation_${deleteData.conversationId}`).emit('message_deleted', deleteData);
+    // Broadcast to all users in the conversation, including the sender
+    io.in(`conversation_${deleteData.conversationId}`).emit('message_deleted', deleteData);
     
-    logger.info(`Broadcasted message deletion ${deleteData.messageId}`);
+    logger.info(`Broadcasted message deletion ${deleteData.messageId} (including sender)`);
   });
 
   // User presence events
