@@ -127,7 +127,17 @@ export const ChatProvider = ({ children }) => {
 
     // New message listener
     const unsubscribeNewMessage = socketService.on('new_message', (message) => {
-      console.log('📨 Received new message via socket:', message);
+      console.log('📨 Received new message via socket:', { 
+        id: message.id, 
+        conversationId: message.conversation_id, 
+        content: message.content.slice(0, 30) + '...', 
+        sender: message.sender_id 
+      });
+      
+      // Check if we already have messages for this conversation
+      const existingMessages = state.messages[message.conversation_id] || [];
+      console.log('💾 Existing messages for conversation:', existingMessages.length);
+      
       dispatch({
         type: 'ADD_MESSAGE',
         payload: { conversationId: message.conversation_id, message }
@@ -230,21 +240,34 @@ export const ChatProvider = ({ children }) => {
   };
 
   // Load messages for a conversation
-  const loadMessages = async (conversationId, limit = 50, offset = 0) => {
+  const loadMessages = async (conversationId, limit = 50, offset = 0, retryCount = 0) => {
     try {
-      console.log('📥 Loading messages for conversation:', conversationId);
+      console.log('📥 Loading messages for conversation:', conversationId, retryCount > 0 ? `(retry ${retryCount})` : '');
       const response = await messageApiExports.getMessages(conversationId, limit, offset);
-      console.log('📄 Messages loaded:', response.data.messages?.length || 0, 'messages');
+      const messages = response.data.messages || [];
+      console.log('📄 Messages loaded:', messages.length, 'messages');
+      
+      if (messages.length > 0) {
+        console.log('📋 Message details:', messages.map(m => ({ id: m.id, content: m.content.slice(0, 20) + '...', sender: m.sender_id })));
+      }
       
       dispatch({
         type: 'SET_MESSAGES',
-        payload: { conversationId, messages: response.data.messages }
+        payload: { conversationId, messages }
       });
       
       // Join socket room for this conversation
       socketService.joinConversation(conversationId);
       
-      return response.data.messages;
+      // If no messages found but this might be a new conversation, try once more after a delay
+      if (messages.length === 0 && retryCount === 0) {
+        console.log('🔄 No messages found, will retry once after 1 second...');
+        setTimeout(() => {
+          loadMessages(conversationId, limit, offset, 1);
+        }, 1000);
+      }
+      
+      return messages;
     } catch (error) {
       console.error('❌ Failed to load messages:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to load messages' });

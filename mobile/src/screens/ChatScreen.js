@@ -46,6 +46,18 @@ const ChatScreen = ({ route, navigation }) => {
 
   const conversationMessages = messages[conversationId] || [];
   const typingUsersList = typingUsers[conversationId] || [];
+  
+  // Debug: Log when messages change
+  useEffect(() => {
+    console.log('💬 Messages for conversation', conversationId, 'changed:', conversationMessages.length, 'messages');
+    if (conversationMessages.length > 0) {
+      console.log('📝 Message details:', conversationMessages.map(m => ({ 
+        id: m.id, 
+        content: m.content.slice(0, 20) + '...', 
+        sender: m.sender_id 
+      })));
+    }
+  }, [conversationMessages, conversationId]);
 
   useEffect(() => {
     console.log('💬 ChatScreen mounted for conversation:', conversationId);
