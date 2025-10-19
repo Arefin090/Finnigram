@@ -183,6 +183,21 @@ const handleRedisEvents = (io, subscriber) => {
     // Broadcast typing indicator to conversation participants
     io.to(`conversation_${typingData.conversationId}`).emit('typing_indicator', typingData);
   });
+
+  // Conversation created event
+  subscriber.subscribe('conversation_created', (message) => {
+    const { userId, conversation } = JSON.parse(message);
+    
+    // Find the specific user's socket and emit the event
+    const userSockets = Array.from(io.sockets.sockets.values())
+      .filter(socket => socket.userId === userId);
+    
+    userSockets.forEach(socket => {
+      socket.emit('conversation_created', conversation);
+    });
+    
+    logger.info(`Broadcasted new conversation ${conversation.id} to user ${userId}`);
+  });
 };
 
 module.exports = { handleMessageEvents, handleRedisEvents };

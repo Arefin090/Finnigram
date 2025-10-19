@@ -71,20 +71,48 @@ const ConversationsScreen = ({ navigation }) => {
   };
 
   const getConversationName = (conversation) => {
+    console.log('🏷️ Getting conversation name for:', { 
+      id: conversation.id, 
+      type: conversation.type, 
+      name: conversation.name, 
+      participants: conversation.participants 
+    });
+    
     if (conversation.type === 'group') {
-      return conversation.name;
+      return conversation.name || 'Group Chat';
     }
     
     // For direct messages, show the other user's name
     if (conversation.participants && conversation.participants.length > 0) {
       // Find the other participant (not the current user)
-      const otherParticipant = conversation.participants.find(p => p.user_id !== user.id);
+      const otherParticipant = conversation.participants.find(p => 
+        p.user_id !== user.id && p.user_id !== user.user_id
+      );
+      
+      console.log('👤 Other participant found:', otherParticipant);
+      
       if (otherParticipant) {
-        return otherParticipant.display_name || otherParticipant.username || 'Unknown User';
+        // Try multiple field names for display name
+        const displayName = otherParticipant.display_name || 
+                           otherParticipant.displayName || 
+                           otherParticipant.username ||
+                           otherParticipant.name ||
+                           'Unknown User';
+        console.log('📝 Using display name:', displayName);
+        return displayName;
       }
     }
     
-    return conversation.name || 'Direct Message';
+    // If participants are still loading, show loading message
+    if (conversation.participants === undefined) {
+      console.log('⏳ Participants still loading...');
+      return 'Loading...';
+    }
+    
+    // Fallback to conversation name or generic message
+    const fallbackName = conversation.name || 'Direct Message';
+    console.log('🔄 Using fallback name:', fallbackName);
+    return fallbackName;
   };
 
   const isUserOnline = (conversation) => {

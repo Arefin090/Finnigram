@@ -37,6 +37,7 @@ const ChatScreen = ({ route, navigation }) => {
 
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(true);
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const [inputHeight, setInputHeight] = useState(40);
@@ -47,8 +48,23 @@ const ChatScreen = ({ route, navigation }) => {
   const typingUsersList = typingUsers[conversationId] || [];
 
   useEffect(() => {
-    loadMessages(conversationId);
-    markAsRead(conversationId);
+    console.log('💬 ChatScreen mounted for conversation:', conversationId);
+    console.log('💬 Current messages for this conversation:', conversationMessages?.length || 0);
+    
+    if (conversationId) {
+      setMessagesLoading(true);
+      loadMessages(conversationId).then(() => {
+        console.log('📥 Messages loaded, setting loading to false');
+        setMessagesLoading(false);
+      }).catch((error) => {
+        console.error('❌ Failed to load messages:', error);
+        setMessagesLoading(false);
+      });
+      markAsRead(conversationId);
+    } else {
+      console.error('❌ No conversationId provided to ChatScreen');
+      setMessagesLoading(false);
+    }
     
     return () => {
       // Stop typing when leaving chat
@@ -245,19 +261,31 @@ const ChatScreen = ({ route, navigation }) => {
     >
       <StatusBar style="light" />
       
-      <FlatList
-        ref={flatListRef}
-        data={conversationMessages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContainer}
-        inverted={false}
-        onContentSizeChange={() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }}
-        ListFooterComponent={renderTypingIndicator}
-      />
+      {messagesLoading ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading messages...</Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={conversationMessages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id.toString()}
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContainer}
+          inverted={false}
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }}
+          ListFooterComponent={renderTypingIndicator}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyMessagesContainer}>
+              <Text style={styles.emptyMessagesText}>No messages yet</Text>
+              <Text style={styles.emptyMessagesSubtext}>Start the conversation!</Text>
+            </View>
+          )}
+        />
+      )}
 
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
@@ -527,6 +555,35 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  // Loading and Empty States
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  emptyMessagesContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyMessagesText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginBottom: 8,
+  },
+  emptyMessagesSubtext: {
+    fontSize: 14,
+    color: '#C7C7CC',
   },
 });
 

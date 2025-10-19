@@ -67,6 +67,8 @@ const UserSearchScreen = ({ navigation }) => {
     setCreatingConversation(true);
     
     try {
+      console.log('🚀 Starting conversation with user:', selectedUser);
+      
       // Create a direct conversation
       const conversationData = {
         type: 'direct',
@@ -76,18 +78,23 @@ const UserSearchScreen = ({ navigation }) => {
       const response = await messageApiExports.createConversation(conversationData);
       const conversation = response.data.conversation;
       
-      // Refresh conversations list
-      await loadConversations();
+      console.log('✅ Conversation created:', conversation);
       
-      // Navigate to the new conversation
-      navigation.navigate('Chat', {
-        conversationId: conversation.id,
-        conversationName: selectedUser.displayName || selectedUser.username,
-        conversationType: 'direct',
-      });
+      // Small delay to allow real-time sync
+      setTimeout(async () => {
+        // Refresh conversations list to ensure it appears
+        await loadConversations();
+        
+        // Navigate to the new conversation
+        navigation.navigate('Chat', {
+          conversationId: conversation.id,
+          conversationName: selectedUser.displayName || selectedUser.username,
+          conversationType: 'direct',
+        });
+      }, 500);
       
     } catch (error) {
-      console.error('Start conversation error:', error);
+      console.error('❌ Start conversation error:', error);
       Alert.alert('Error', 'Failed to start conversation. Please try again.');
     } finally {
       setCreatingConversation(false);

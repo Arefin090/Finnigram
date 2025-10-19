@@ -190,10 +190,18 @@ export const ChatProvider = ({ children }) => {
     // New conversation created (for when someone adds you to a conversation)
     const unsubscribeNewConversation = socketService.on('conversation_created', (conversation) => {
       console.log('🆕 New conversation received via socket:', conversation);
-      dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
       
-      // Also refresh conversations to get full participant data
-      loadConversations();
+      // Check if conversation already exists to avoid duplicates
+      const existingConversation = state.conversations.find(c => c.id === conversation.id);
+      if (!existingConversation) {
+        dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
+      }
+      
+      // Always refresh conversations to ensure we have full participant data
+      setTimeout(() => {
+        console.log('🔄 Refreshing conversations to get complete participant data');
+        loadConversations();
+      }, 500); // Small delay to allow backend to fully process
     });
 
     // Cleanup function

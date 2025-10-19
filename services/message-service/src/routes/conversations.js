@@ -11,9 +11,10 @@ router.get('/', verifyToken, async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // Simple query without subqueries for debugging
     const { pool } = require('../utils/database');
-    const result = await pool.query(`
+    
+    // Get conversations with participant data
+    const conversationsResult = await pool.query(`
       SELECT c.*, cp.last_read_at
       FROM conversations c
       JOIN conversation_participants cp ON c.id = cp.conversation_id
@@ -21,7 +22,25 @@ router.get('/', verifyToken, async (req, res, next) => {
       ORDER BY c.created_at DESC
     `, [userId]);
     
-    res.json({ conversations: result.rows });
+    // For each conversation, get participant details
+    const conversationsWithParticipants = await Promise.all(
+      conversationsResult.rows.map(async (conversation) => {
+        const participantsResult = await pool.query(`
+          SELECT u.id as user_id, u.username, u.display_name, u.email
+          FROM users u
+          JOIN conversation_participants cp ON u.id = cp.user_id
+          WHERE cp.conversation_id = $1
+        `, [conversation.id]);
+        
+        return {
+          ...conversation,
+          participants: participantsResult.rows
+        };
+      })
+    );
+    
+    logger.info(`Fetched ${conversationsWithParticipants.length} conversations for user ${userId}`);
+    res.json({ conversations: conversationsWithParticipants });
   } catch (error) {
     logger.error('Error in GET /conversations:', error);
     res.status(500).json({ error: 'Database error', details: error.message });
@@ -59,11 +78,36 @@ router.post('/', verifyToken, async (req, res, next) => {
       participants: [...participants, createdBy]
     });
     
+    // Get the conversation with participant data for real-time sync
+    const { pool } = require('../utils/database');
+    const participantsResult = await pool.query(`
+      SELECT u.id as user_id, u.username, u.display_name, u.email
+      FROM users u
+      JOIN conversation_participants cp ON u.id = cp.user_id
+      WHERE cp.conversation_id = $1
+    `, [conversation.id]);
+    
+    const conversationWithParticipants = {
+      ...conversation,
+      participants: participantsResult.rows
+    };
+    
+    // Broadcast to all participants via Redis
+    const redisClient = require('../utils/redis');
+    const allParticipants = [...participants, createdBy];
+    
+    for (const participantId of allParticipants) {
+      await redisClient.publish('conversation_created', JSON.stringify({
+        userId: participantId,
+        conversation: conversationWithParticipants
+      }));
+    }
+    
     logger.info(`Conversation created by user ${createdBy}: ${conversation.id}`);
     
     res.status(201).json({
       message: 'Conversation created successfully',
-      conversation
+      conversation: conversationWithParticipants
     });
   } catch (error) {
     next(error);
