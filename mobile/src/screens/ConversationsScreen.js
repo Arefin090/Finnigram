@@ -7,11 +7,17 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
+  Animated,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
+
+const { width } = Dimensions.get('window');
 
 const ConversationsScreen = ({ navigation }) => {
   const { user } = useAuth();
@@ -25,6 +31,9 @@ const ConversationsScreen = ({ navigation }) => {
   } = useChat();
   
   const [refreshing, setRefreshing] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const searchAnimation = new Animated.Value(0);
+  const fabAnimation = new Animated.Value(1);
 
   useEffect(() => {
     loadConversations();
@@ -76,59 +85,111 @@ const ConversationsScreen = ({ navigation }) => {
     return false;
   };
 
-  const renderConversation = ({ item }) => (
-    <TouchableOpacity
-      style={styles.conversationItem}
-      onPress={() => navigation.navigate('Chat', {
-        conversationId: item.id,
-        conversationName: getConversationName(item),
-        conversationType: item.type,
-      })}
-    >
-      <View style={styles.avatarContainer}>
-        <View style={[styles.avatar, isUserOnline(item) && styles.onlineAvatar]}>
-          <Ionicons 
-            name={item.type === 'group' ? 'people' : 'person'} 
-            size={24} 
-            color="#fff" 
-          />
-        </View>
-        {isUserOnline(item) && <View style={styles.onlineIndicator} />}
-      </View>
-      
-      <View style={styles.conversationContent}>
-        <View style={styles.conversationHeader}>
-          <Text style={styles.conversationName} numberOfLines={1}>
-            {getConversationName(item)}
-          </Text>
-          <Text style={styles.timestamp}>
-            {formatLastSeen(item.last_message_at)}
-          </Text>
+  const getInitials = (name) => {
+    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  };
+
+  const renderConversation = ({ item, index }) => (
+    <Animated.View style={[
+      styles.conversationWrapper,
+      { 
+        transform: [{ 
+          translateY: new Animated.Value(50).interpolate({
+            inputRange: [0, 50],
+            outputRange: [0, 0],
+          })
+        }] 
+      }
+    ]}>
+      <TouchableOpacity
+        style={styles.conversationItem}
+        onPress={() => navigation.navigate('Chat', {
+          conversationId: item.id,
+          conversationName: getConversationName(item),
+          conversationType: item.type,
+        })}
+        activeOpacity={0.7}
+      >
+        <View style={styles.avatarContainer}>
+          <LinearGradient
+            colors={item.type === 'group' ? ['#667eea', '#764ba2'] : ['#4facfe', '#00f2fe']}
+            style={[styles.avatar, isUserOnline(item) && styles.onlineAvatar]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            {item.type === 'group' ? (
+              <Ionicons name="people" size={20} color="#fff" />
+            ) : (
+              <Text style={styles.avatarText}>
+                {getInitials(getConversationName(item))}
+              </Text>
+            )}
+          </LinearGradient>
+          {isUserOnline(item) && <View style={styles.onlineIndicator} />}
         </View>
         
-        <View style={styles.messagePreview}>
-          <Text style={styles.lastMessage} numberOfLines={1}>
-            {item.last_message || 'No messages yet'}
-          </Text>
-          {item.unread_count > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>
-                {item.unread_count > 99 ? '99+' : item.unread_count}
-              </Text>
-            </View>
-          )}
+        <View style={styles.conversationContent}>
+          <View style={styles.conversationHeader}>
+            <Text style={styles.conversationName} numberOfLines={1}>
+              {getConversationName(item)}
+            </Text>
+            <Text style={styles.timestamp}>
+              {formatLastSeen(item.last_message_at)}
+            </Text>
+          </View>
+          
+          <View style={styles.messagePreview}>
+            <Text style={styles.lastMessage} numberOfLines={2}>
+              {item.last_message || 'No messages yet'}
+            </Text>
+            {item.unread_count > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadCount}>
+                  {item.unread_count > 99 ? '99+' : item.unread_count}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+        
+        <View style={styles.conversationActions}>
+          <Ionicons name="chevron-forward-outline" size={16} color="#C7C7CC" />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="chatbubbles-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyTitle}>No conversations yet</Text>
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.emptyIcon}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <Ionicons name="chatbubbles-outline" size={40} color="#fff" />
+      </LinearGradient>
+      <Text style={styles.emptyTitle}>Welcome to Finnigram</Text>
       <Text style={styles.emptySubtitle}>
-        Start a conversation with your friends
+        Start meaningful conversations with the people who matter most
       </Text>
+      <TouchableOpacity 
+        style={styles.emptyButton}
+        onPress={() => {
+          console.log('Start conversation pressed');
+          Alert.alert('Coming Soon', 'User search and conversation creation is coming soon!');
+        }}
+      >
+        <LinearGradient
+          colors={['#4facfe', '#00f2fe']}
+          style={styles.emptyButtonGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        >
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={styles.emptyButtonText}>Start a Conversation</Text>
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 
@@ -136,30 +197,94 @@ const ConversationsScreen = ({ navigation }) => {
     <View style={styles.container}>
       <StatusBar style="light" />
       
+      {/* Header */}
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Finnigram</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setSearchVisible(!searchVisible)}
+            >
+              <Ionicons name="search" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Search Bar */}
+      {searchVisible && (
+        <Animated.View style={[styles.searchContainer, {
+          opacity: searchAnimation,
+          transform: [{ translateY: searchAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-20, 0]
+          })}]
+        }]}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color="#8E8E93" />
+            <Text style={styles.searchPlaceholder}>Search conversations...</Text>
+          </View>
+        </Animated.View>
+      )}
+      
       <FlatList
         data={conversations}
         renderItem={renderConversation}
         keyExtractor={(item) => item.id.toString()}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor="#667eea"
+            colors={['#667eea']}
+          />
         }
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={conversations.length === 0 ? styles.emptyList : null}
+        contentContainerStyle={conversations.length === 0 ? styles.emptyList : styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
       
-      <TouchableOpacity 
-        style={styles.fab}
-        onPress={() => {
-          console.log('FAB clicked!');
-          if (typeof window !== 'undefined') {
-            window.alert('New Conversation: Coming soon! You will be able to start new conversations here.');
-          } else {
-            Alert.alert('New Conversation', 'Coming soon! You will be able to start new conversations here.');
-          }
-        }}
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-      </TouchableOpacity>
+      <Animated.View style={[styles.fabContainer, {
+        transform: [{ scale: fabAnimation }]
+      }]}>
+        <TouchableOpacity 
+          style={styles.fab}
+          onPress={() => {
+            console.log('FAB clicked - navigating to user search');
+            Animated.sequence([
+              Animated.timing(fabAnimation, {
+                toValue: 0.9,
+                duration: 100,
+                useNativeDriver: true,
+              }),
+              Animated.timing(fabAnimation, {
+                toValue: 1,
+                duration: 100,
+                useNativeDriver: true,
+              }),
+            ]).start();
+            
+            navigation.navigate('UserSearch');
+          }}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={['#4facfe', '#00f2fe']}
+            style={styles.fabGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name="add" size={24} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 };
@@ -167,14 +292,90 @@ const ConversationsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F2F2F7',
+  },
+  
+  // Header Styles
+  header: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 25,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+  headerActions: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+
+  // Search Styles
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchPlaceholder: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#8E8E93',
+  },
+
+  // List Styles
+  listContent: {
+    paddingTop: 8,
+  },
+  separator: {
+    height: 0.5,
+    backgroundColor: '#E5E5EA',
+    marginLeft: 82,
+  },
+
+  // Conversation Styles
+  conversationWrapper: {
+    backgroundColor: '#FFFFFF',
   },
   conversationItem: {
     flexDirection: 'row',
     padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    alignItems: 'center',
     cursor: 'pointer',
   },
   avatarContainer: {
@@ -182,27 +383,42 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#007AFF',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     justifyContent: 'center',
     alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   onlineAvatar: {
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#34C759',
   },
   onlineIndicator: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#34C759',
-    borderWidth: 2,
-    borderColor: '#fff',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
   },
   conversationContent: {
     flex: 1,
@@ -212,44 +428,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   conversationName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: '#000000',
     flex: 1,
+    letterSpacing: -0.2,
   },
   timestamp: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 14,
+    color: '#8E8E93',
+    fontWeight: '500',
   },
   messagePreview: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   lastMessage: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: '#8E8E93',
     flex: 1,
+    lineHeight: 20,
   },
   unreadBadge: {
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    backgroundColor: '#4facfe',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     marginLeft: 8,
-    minWidth: 20,
+    minWidth: 24,
     alignItems: 'center',
   },
   unreadCount: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
+  conversationActions: {
+    marginLeft: 8,
+    justifyContent: 'center',
+  },
+
+  // Empty State Styles
   emptyList: {
     flex: 1,
+    justifyContent: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -257,37 +482,85 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
   },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginTop: 16,
-    marginBottom: 8,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginBottom: 12,
+    letterSpacing: -0.5,
   },
   emptySubtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#8E8E93',
     textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  emptyButton: {
+    borderRadius: 25,
+    overflow: 'hidden',
+  },
+  emptyButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+  },
+  emptyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+
+  // FAB Styles
+  fabContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
   },
   fab: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    cursor: 'pointer',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  fabGradient: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    cursor: 'pointer',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
 });
 
