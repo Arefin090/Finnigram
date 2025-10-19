@@ -6,16 +6,20 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import socketService from '../services/socket';
+
+const { width } = Dimensions.get('window');
 
 const ProfileScreen = () => {
   const { user, logout } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -24,10 +28,23 @@ const ProfileScreen = () => {
         { 
           text: 'Sign Out', 
           style: 'destructive',
-          onPress: logout 
+          onPress: async () => {
+            try {
+              console.log('Attempting logout...');
+              await logout();
+              console.log('Logout completed');
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          }
         },
       ]
     );
+  };
+
+  const handleQuickAction = (action) => {
+    Alert.alert('Coming Soon', `${action} functionality will be available soon!`);
   };
 
   const getConnectionStatus = () => {
@@ -35,204 +52,409 @@ const ProfileScreen = () => {
     return status.isConnected ? 'Connected' : 'Disconnected';
   };
 
-  const ProfileItem = ({ icon, title, subtitle, onPress, showArrow = true }) => (
-    <TouchableOpacity style={styles.profileItem} onPress={onPress}>
-      <View style={styles.profileItemLeft}>
-        <Ionicons name={icon} size={24} color="#007AFF" />
-        <View style={styles.profileItemText}>
-          <Text style={styles.profileItemTitle}>{title}</Text>
-          {subtitle && <Text style={styles.profileItemSubtitle}>{subtitle}</Text>}
-        </View>
-      </View>
-      {showArrow && (
-        <Ionicons name="chevron-forward" size={20} color="#666" />
-      )}
-    </TouchableOpacity>
-  );
+  const getInitials = (name) => {
+    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  };
 
   return (
-    <ScrollView style={styles.container}>
-      <StatusBar style="dark" />
+    <View style={styles.container}>
+      <StatusBar style="light" />
       
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Ionicons name="person" size={40} color="#fff" />
+      {/* Beautiful Header with Gradient */}
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {getInitials(user?.displayName || user?.username)}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.editAvatarButton}>
+              <Ionicons name="camera" size={16} color="#667eea" />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.displayName}>
+            {user?.displayName || user?.username || 'User'}
+          </Text>
+          <Text style={styles.username}>@{user?.username}</Text>
+          
+          <View style={styles.connectionStatus}>
+            <View style={[
+              styles.statusDot, 
+              getConnectionStatus() === 'Connected' ? styles.statusConnected : styles.statusDisconnected
+            ]} />
+            <Text style={styles.statusText}>{getConnectionStatus()}</Text>
+          </View>
         </View>
-        <Text style={styles.displayName}>{user?.displayName || user?.username}</Text>
-        <Text style={styles.username}>@{user?.username}</Text>
-        <Text style={styles.email}>{user?.email}</Text>
-      </View>
+      </LinearGradient>
 
-      {/* Profile Options */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         
-        <ProfileItem
-          icon="person-outline"
-          title="Edit Profile"
-          subtitle="Update your display name and avatar"
-          onPress={() => Alert.alert('Coming Soon', 'Profile editing will be available soon')}
-        />
-        
-        <ProfileItem
-          icon="lock-closed-outline"
-          title="Privacy & Security"
-          subtitle="Manage your privacy settings"
-          onPress={() => Alert.alert('Coming Soon', 'Privacy settings will be available soon')}
-        />
-        
-        <ProfileItem
-          icon="notifications-outline"
-          title="Notifications"
-          subtitle="Customize your notification preferences"
-          onPress={() => Alert.alert('Coming Soon', 'Notification settings will be available soon')}
-        />
-      </View>
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={() => handleQuickAction('Edit Profile')}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={['#4facfe', '#00f2fe']}
+              style={styles.quickActionIcon}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="person-outline" size={20} color="#FFFFFF" />
+            </LinearGradient>
+            <Text style={styles.quickActionText}>Edit Profile</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={() => handleQuickAction('Settings')}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.quickActionIcon}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+            </LinearGradient>
+            <Text style={styles.quickActionText}>Settings</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={() => handleQuickAction('Share Profile')}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={['#a8edea', '#fed6e3']}
+              style={styles.quickActionIcon}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+            </LinearGradient>
+            <Text style={styles.quickActionText}>Share Profile</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* App Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>App Info</Text>
-        
-        <ProfileItem
-          icon="wifi-outline"
-          title="Connection Status"
-          subtitle={getConnectionStatus()}
-          showArrow={false}
-        />
-        
-        <ProfileItem
-          icon="information-circle-outline"
-          title="About Finnigram"
-          subtitle="Version 1.0.0"
+        {/* User Info Card */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Ionicons name="mail-outline" size={20} color="#8E8E93" />
+            <Text style={styles.infoText}>{user?.email}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar-outline" size={20} color="#8E8E93" />
+            <Text style={styles.infoText}>
+              Joined {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stats Card */}
+        <View style={styles.statsCard}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>0</Text>
+            <Text style={styles.statLabel}>Messages</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>0</Text>
+            <Text style={styles.statLabel}>Friends</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>0</Text>
+            <Text style={styles.statLabel}>Groups</Text>
+          </View>
+        </View>
+
+        {/* About Finnigram */}
+        <TouchableOpacity 
+          style={styles.aboutCard}
           onPress={() => Alert.alert(
             'About Finnigram',
-            'A modern messaging platform built with production-grade engineering practices.\n\nBuilt by Finn with ❤️'
+            'The messaging app that helps you be a better friend, partner, and family member.\n\nBuilt with ❤️ by Finn'
           )}
-        />
-        
-        <ProfileItem
-          icon="help-circle-outline"
-          title="Help & Support"
-          subtitle="Get help and report issues"
-          onPress={() => Alert.alert('Coming Soon', 'Help center will be available soon')}
-        />
-      </View>
+          activeOpacity={0.7}
+        >
+          <LinearGradient
+            colors={['#667eea', '#764ba2']}
+            style={styles.aboutIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name="information-circle" size={24} color="#FFFFFF" />
+          </LinearGradient>
+          <View style={styles.aboutContent}>
+            <Text style={styles.aboutTitle}>About Finnigram</Text>
+            <Text style={styles.aboutSubtitle}>Version 1.0.0 • Tap to learn more</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+        </TouchableOpacity>
 
-      {/* Logout */}
-      <View style={styles.section}>
+        {/* Sign Out Button */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
+          <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
-      </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          Made with ❤️ by Finn
-        </Text>
-      </View>
-    </ScrollView>
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F2F2F7',
   },
-  header: {
-    backgroundColor: '#fff',
+  headerGradient: {
+    paddingTop: 60,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+  },
+  headerContent: {
     alignItems: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 24,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#007AFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  avatarText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  editAvatarButton: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   displayName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   username: {
     fontSize: 16,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: 12,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusConnected: {
+    backgroundColor: '#34C759',
+  },
+  statusDisconnected: {
+    backgroundColor: '#FF3B30',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  content: {
+    flex: 1,
+    marginTop: -20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: '#F2F2F7',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: 30,
+    paddingVertical: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  quickActionButton: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  quickActionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickActionText: {
+    fontSize: 12,
+    color: '#3C3C43',
+    fontWeight: '500',
+  },
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    margin: 20,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  infoText: {
+    fontSize: 16,
+    color: '#3C3C43',
+    marginLeft: 12,
+    flex: 1,
+  },
+  aboutCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  statsCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    paddingVertical: 20,
+    borderRadius: 16,
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#3C3C43',
     marginBottom: 4,
   },
-  email: {
+  statLabel: {
     fontSize: 14,
-    color: '#666',
+    color: '#8E8E93',
+    fontWeight: '500',
   },
-  section: {
-    marginTop: 32,
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E5E5EA',
+    marginHorizontal: 20,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 16,
-    paddingHorizontal: 24,
-  },
-  profileItem: {
-    flexDirection: 'row',
+  aboutIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    cursor: 'pointer',
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    marginRight: 12,
   },
-  profileItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  aboutContent: {
     flex: 1,
   },
-  profileItemText: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  profileItemTitle: {
+  aboutTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: '#3C3C43',
+    marginBottom: 2,
   },
-  profileItemSubtitle: {
+  aboutSubtitle: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    color: '#8E8E93',
   },
   logoutButton: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    padding: 16,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginHorizontal: 24,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+    cursor: 'pointer',
   },
   logoutText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FF3B30',
-    marginLeft: 16,
+    marginLeft: 8,
   },
-  footer: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  footerText: {
-    fontSize: 14,
-    color: '#666',
+  bottomSpacer: {
+    height: 40,
   },
 });
 
