@@ -11,13 +11,20 @@ router.get('/', verifyToken, async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // Skip cache for debugging
-    const conversations = await Conversation.getUserConversations(userId);
+    // Simple query without subqueries for debugging
+    const { pool } = require('../utils/database');
+    const result = await pool.query(`
+      SELECT c.*, cp.last_read_at
+      FROM conversations c
+      JOIN conversation_participants cp ON c.id = cp.conversation_id
+      WHERE cp.user_id = $1
+      ORDER BY c.created_at DESC
+    `, [userId]);
     
-    res.json({ conversations });
+    res.json({ conversations: result.rows });
   } catch (error) {
     logger.error('Error in GET /conversations:', error);
-    next(error);
+    res.status(500).json({ error: 'Database error', details: error.message });
   }
 });
 
