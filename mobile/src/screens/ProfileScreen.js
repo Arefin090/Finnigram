@@ -187,6 +187,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#fff',
     paddingVertical: 16,
+    cursor: 'pointer',
     paddingHorizontal: 24,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',

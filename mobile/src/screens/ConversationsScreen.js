@@ -147,7 +147,10 @@ const ConversationsScreen = ({ navigation }) => {
         contentContainerStyle={conversations.length === 0 ? styles.emptyList : null}
       />
       
-      <TouchableOpacity style={styles.fab}>
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={() => Alert.alert('New Conversation', 'Coming soon! You will be able to start new conversations here.')}
+      >
         <Ionicons name="add" size={24} color="#fff" />
       </TouchableOpacity>
     </View>
@@ -165,6 +168,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    cursor: 'pointer',
   },
   avatarContainer: {
     marginRight: 12,
@@ -269,6 +273,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
+    cursor: 'pointer',
     shadowOffset: {
       width: 0,
       height: 2,
