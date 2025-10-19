@@ -17,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
+import socketService from '../services/socket';
 
 const { width } = Dimensions.get('window');
 
@@ -25,6 +26,7 @@ const ChatScreen = ({ route, navigation }) => {
   const { user } = useAuth();
   const { 
     messages, 
+    conversations,
     typingUsers, 
     loadMessages, 
     sendMessage, 
@@ -47,7 +49,7 @@ const ChatScreen = ({ route, navigation }) => {
   const conversationMessages = messages[conversationId] || [];
   const typingUsersList = typingUsers[conversationId] || [];
   
-  // Debug: Log when messages change
+  // Debug: Log when messages change and scroll to bottom
   useEffect(() => {
     console.log('💬 Messages for conversation', conversationId, 'changed:', conversationMessages.length, 'messages');
     if (conversationMessages.length > 0) {
@@ -56,6 +58,18 @@ const ChatScreen = ({ route, navigation }) => {
         content: m.content.slice(0, 20) + '...', 
         sender: m.sender_id 
       })));
+      
+      // Scroll to bottom when messages are loaded or updated
+      setTimeout(() => {
+        console.log('⬇️ Auto-scrolling to bottom after messages changed');
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      
+      // Also force another scroll after a longer delay to ensure visibility
+      setTimeout(() => {
+        console.log('🔄 Force scroll to ensure messages are visible');
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 500);
     }
   }, [conversationMessages, conversationId]);
 
@@ -64,15 +78,28 @@ const ChatScreen = ({ route, navigation }) => {
     console.log('💬 Current messages for this conversation:', conversationMessages?.length || 0);
     
     if (conversationId) {
-      setMessagesLoading(true);
-      loadMessages(conversationId).then(() => {
-        console.log('📥 Messages loaded, setting loading to false');
+      // Since we auto-join all conversation rooms, messages should already be in state
+      if (conversationMessages.length > 0) {
+        console.log('✅ Messages already synced via real-time, using cached messages');
         setMessagesLoading(false);
-      }).catch((error) => {
-        console.error('❌ Failed to load messages:', error);
-        setMessagesLoading(false);
-      });
-      markAsRead(conversationId);
+        markAsRead(conversationId);
+      } else {
+        console.log('📥 No messages in state, loading from API (first time or missed messages)');
+        setMessagesLoading(true);
+        loadMessages(conversationId).then(() => {
+          console.log('📥 Messages loaded from API, setting loading to false');
+          setMessagesLoading(false);
+        }).catch((error) => {
+          console.error('❌ Failed to load messages:', error);
+          setMessagesLoading(false);
+        });
+        markAsRead(conversationId);
+      }
+      
+      // Socket room should already be joined via auto-join, but ensure it
+      if (socketService.isConnected) {
+        socketService.joinConversation(conversationId);
+      }
     } else {
       console.error('❌ No conversationId provided to ChatScreen');
       setMessagesLoading(false);
@@ -283,11 +310,25 @@ const ChatScreen = ({ route, navigation }) => {
           data={conversationMessages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id.toString()}
+          key={`messages-${conversationId}-${conversationMessages.length}`}
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContainer}
           inverted={false}
+          removeClippedSubviews={false}
+          initialNumToRender={20}
           onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
+            console.log('📏 FlatList content size changed, scrolling to end');
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }}
+          onLayout={() => {
+            console.log('📐 FlatList layout changed');
+            if (conversationMessages.length > 0) {
+              setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }, 100);
+            }
           }}
           ListFooterComponent={renderTypingIndicator}
           ListEmptyComponent={() => (

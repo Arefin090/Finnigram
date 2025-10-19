@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -70,14 +70,7 @@ const ConversationsScreen = ({ navigation }) => {
     return messageTime.toLocaleDateString();
   };
 
-  const getConversationName = (conversation) => {
-    console.log('🏷️ Getting conversation name for:', { 
-      id: conversation.id, 
-      type: conversation.type, 
-      name: conversation.name, 
-      participants: conversation.participants 
-    });
-    
+  const getConversationName = useCallback((conversation) => {
     if (conversation.type === 'group') {
       return conversation.name || 'Group Chat';
     }
@@ -89,8 +82,6 @@ const ConversationsScreen = ({ navigation }) => {
         p.user_id !== user.id && p.user_id !== user.user_id
       );
       
-      console.log('👤 Other participant found:', otherParticipant);
-      
       if (otherParticipant) {
         // Try multiple field names for display name
         const displayName = otherParticipant.display_name || 
@@ -98,22 +89,18 @@ const ConversationsScreen = ({ navigation }) => {
                            otherParticipant.username ||
                            otherParticipant.name ||
                            'Unknown User';
-        console.log('📝 Using display name:', displayName);
         return displayName;
       }
     }
     
-    // If participants are still loading, show loading message
+    // If participants are undefined, fall back
     if (conversation.participants === undefined) {
-      console.log('⏳ Participants still loading...');
       return 'Loading...';
     }
     
     // Fallback to conversation name or generic message
-    const fallbackName = conversation.name || 'Direct Message';
-    console.log('🔄 Using fallback name:', fallbackName);
-    return fallbackName;
-  };
+    return conversation.name || 'Direct Message';
+  }, [user.id]);
 
   const isUserOnline = (conversation) => {
     // Simplified online check - would need participant user IDs in real app
@@ -124,7 +111,7 @@ const ConversationsScreen = ({ navigation }) => {
     return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
   };
 
-  const renderConversation = ({ item, index }) => (
+  const renderConversation = useCallback(({ item, index }) => (
     <Animated.View style={[
       styles.conversationWrapper,
       { 
@@ -192,7 +179,7 @@ const ConversationsScreen = ({ navigation }) => {
         </View>
       </TouchableOpacity>
     </Animated.View>
-  );
+  ), [getConversationName, getInitials, isUserOnline, navigation]);
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>

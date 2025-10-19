@@ -44,12 +44,28 @@ const chatReducer = (state, action) => {
     
     case 'ADD_MESSAGE':
       const { conversationId, message } = action.payload;
+      const existingMessages = state.messages[conversationId] || [];
+      
+      // Check if message already exists to prevent duplicates
+      const messageExists = existingMessages.some(m => m.id === message.id);
+      if (messageExists) {
+        console.log('⚠️ Message already exists, skipping:', message.id);
+        return state;
+      }
+      
+      console.log('🔄 ADD_MESSAGE reducer:', { 
+        conversationId, 
+        messageId: message.id, 
+        existingCount: existingMessages.length,
+        newTotal: existingMessages.length + 1
+      });
+      
       return {
         ...state,
         messages: {
           ...state.messages,
           [conversationId]: [
-            ...(state.messages[conversationId] || []),
+            ...existingMessages,
             message,
           ],
         },
@@ -134,9 +150,11 @@ export const ChatProvider = ({ children }) => {
         sender: message.sender_id 
       });
       
-      // Check if we already have messages for this conversation
+      // Only log existing messages if this conversation is currently loaded
       const existingMessages = state.messages[message.conversation_id] || [];
-      console.log('💾 Existing messages for conversation:', existingMessages.length);
+      if (existingMessages.length > 0) {
+        console.log('💾 Existing messages for conversation:', existingMessages.length);
+      }
       
       dispatch({
         type: 'ADD_MESSAGE',
@@ -205,13 +223,19 @@ export const ChatProvider = ({ children }) => {
       const existingConversation = state.conversations.find(c => c.id === conversation.id);
       if (!existingConversation) {
         dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
+        
+        // Immediately join the conversation room to receive messages
+        console.log('🔗 Auto-joining room for new conversation:', conversation.id);
+        if (socketService.isConnected) {
+          socketService.joinConversation(conversation.id);
+        }
       }
       
-      // Always refresh conversations to ensure we have full participant data
+      // Refresh conversations to ensure we have complete participant data
       setTimeout(() => {
-        console.log('🔄 Refreshing conversations to get complete participant data');
+        console.log('🔄 Refreshing conversations after new conversation');
         loadConversations();
-      }, 500); // Small delay to allow backend to fully process
+      }, 500);
     });
 
     // Cleanup function
@@ -226,13 +250,25 @@ export const ChatProvider = ({ children }) => {
     };
   }, [isAuthenticated, socketService.isConnected, state.typingUsers]);
 
-  // Load conversations
+  // Load conversations and auto-join all socket rooms
   const loadConversations = async () => {
     dispatch({ type: 'LOADING' });
     
     try {
       const response = await messageApiExports.getConversations();
-      dispatch({ type: 'SET_CONVERSATIONS', payload: response.data.conversations });
+      const conversations = response.data.conversations;
+      
+      dispatch({ type: 'SET_CONVERSATIONS', payload: conversations });
+      
+      // Auto-join socket rooms for ALL conversations to receive messages globally
+      if (socketService.isConnected && conversations.length > 0) {
+        console.log('🔗 Auto-joining socket rooms for all conversations:', conversations.length);
+        conversations.forEach(conversation => {
+          console.log(`🔗 Auto-joining room for conversation ${conversation.id}`);
+          socketService.joinConversation(conversation.id);
+        });
+      }
+      
     } catch (error) {
       console.error('Failed to load conversations:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to load conversations' });
@@ -242,7 +278,8 @@ export const ChatProvider = ({ children }) => {
   // Load messages for a conversation
   const loadMessages = async (conversationId, limit = 50, offset = 0, retryCount = 0) => {
     try {
-      console.log('📥 Loading messages for conversation:', conversationId, retryCount > 0 ? `(retry ${retryCount})` : '');
+      console.log('📥 LOADING MESSAGES for conversation:', conversationId, retryCount > 0 ? `(retry ${retryCount})` : '');
+      console.log('📍 Load messages called from:', new Error().stack.split('\n')[2].trim());
       const response = await messageApiExports.getMessages(conversationId, limit, offset);
       const messages = response.data.messages || [];
       console.log('📄 Messages loaded:', messages.length, 'messages');
@@ -288,8 +325,17 @@ export const ChatProvider = ({ children }) => {
       
       console.log('✅ Message sent successfully:', response.data);
       
-      // Message will be added via socket listener
-      return response.data.data;
+      // The message should be added via socket listener, but let's also check
+      // if we need to add it manually for the sender
+      const sentMessage = response.data.data;
+      console.log('📤 Sent message details:', { 
+        id: sentMessage.id, 
+        conversationId: sentMessage.conversation_id,
+        sender: sentMessage.sender_id,
+        content: sentMessage.content.slice(0, 20) + '...'
+      });
+      
+      return sentMessage;
     } catch (error) {
       console.error('❌ Failed to send message:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to send message' });
