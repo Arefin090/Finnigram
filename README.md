@@ -28,6 +28,14 @@ This project follows a microservices architecture:
 # Install dependencies for all services
 npm run install:all
 
+# Set up environment variables (each service needs its own .env)
+# User Service: JWT_SECRET, DATABASE_URL, REDIS_URL
+# Message Service: DATABASE_URL, REDIS_URL
+# Realtime Service: REDIS_URL
+
+# Start database services
+docker-compose up -d postgres redis
+
 # Start all services in development
 npm run dev
 
