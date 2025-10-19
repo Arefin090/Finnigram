@@ -149,7 +149,14 @@ const ConversationsScreen = ({ navigation }) => {
       
       <TouchableOpacity 
         style={styles.fab}
-        onPress={() => Alert.alert('New Conversation', 'Coming soon! You will be able to start new conversations here.')}
+        onPress={() => {
+          console.log('FAB clicked!');
+          if (typeof window !== 'undefined') {
+            window.alert('New Conversation: Coming soon! You will be able to start new conversations here.');
+          } else {
+            Alert.alert('New Conversation', 'Coming soon! You will be able to start new conversations here.');
+          }
+        }}
       >
         <Ionicons name="add" size={24} color="#fff" />
       </TouchableOpacity>
