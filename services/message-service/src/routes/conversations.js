@@ -11,16 +11,12 @@ router.get('/', verifyToken, async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // Try cache first
-    let conversations = await getCachedUserConversations(userId);
-    
-    if (!conversations) {
-      conversations = await Conversation.getUserConversations(userId);
-      await cacheUserConversations(userId, conversations);
-    }
+    // Skip cache for debugging
+    const conversations = await Conversation.getUserConversations(userId);
     
     res.json({ conversations });
   } catch (error) {
+    logger.error('Error in GET /conversations:', error);
     next(error);
   }
 });
