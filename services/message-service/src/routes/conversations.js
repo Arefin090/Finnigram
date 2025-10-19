@@ -66,7 +66,20 @@ router.post('/', verifyToken, async (req, res, next) => {
     if (type === 'direct') {
       const existingConversation = await checkExistingDirectConversation(createdBy, participants[0]);
       if (existingConversation) {
-        return res.json({ conversation: existingConversation });
+        // Get the existing conversation with participant data
+        const participantsResult = await pool.query(`
+          SELECT u.id as user_id, u.username, u.display_name, u.email
+          FROM users u
+          JOIN conversation_participants cp ON u.id = cp.user_id
+          WHERE cp.conversation_id = $1
+        `, [existingConversation.id]);
+        
+        const conversationWithParticipants = {
+          ...existingConversation,
+          participants: participantsResult.rows
+        };
+        
+        return res.json({ conversation: conversationWithParticipants });
       }
     }
     
@@ -93,14 +106,20 @@ router.post('/', verifyToken, async (req, res, next) => {
     };
     
     // Broadcast to all participants via Redis
-    const redisClient = require('../utils/redis');
-    const allParticipants = [...participants, createdBy];
-    
-    for (const participantId of allParticipants) {
-      await redisClient.publish('conversation_created', JSON.stringify({
-        userId: participantId,
-        conversation: conversationWithParticipants
-      }));
+    try {
+      const { publishMessage } = require('../utils/redis');
+      const allParticipants = [...participants, createdBy];
+      
+      for (const participantId of allParticipants) {
+        await publishMessage('conversation_created', {
+          userId: participantId,
+          conversation: conversationWithParticipants
+        });
+      }
+      logger.info(`Broadcasted conversation ${conversation.id} to ${allParticipants.length} participants`);
+    } catch (redisError) {
+      logger.error('Failed to broadcast conversation creation:', redisError);
+      // Don't fail the request if Redis broadcast fails
     }
     
     logger.info(`Conversation created by user ${createdBy}: ${conversation.id}`);
