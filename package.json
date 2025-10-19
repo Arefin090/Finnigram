@@ -1,0 +1,35 @@
+{
+  "name": "finnigram",
+  "version": "1.0.0",
+  "description": "A modern messaging platform built with production-grade engineering practices",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "mobile",
+    "shared"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm run install:services && npm run install:mobile",
+    "install:services": "npm install --workspace=services/user-service --workspace=services/message-service --workspace=services/realtime-service --workspace=services/api-gateway",
+    "install:mobile": "npm install --workspace=mobile",
+    "dev": "concurrently \"npm run dev:services\" \"npm run dev:mobile\"",
+    "dev:services": "concurrently \"npm run dev --workspace=services/user-service\" \"npm run dev --workspace=services/message-service\" \"npm run dev --workspace=services/realtime-service\" \"npm run dev --workspace=services/api-gateway\"",
+    "dev:mobile": "npm run dev --workspace=mobile",
+    "build": "npm run build:services && npm run build:mobile",
+    "build:services": "npm run build --workspace=services/user-service --workspace=services/message-service --workspace=services/realtime-service --workspace=services/api-gateway",
+    "build:mobile": "npm run build --workspace=mobile",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
