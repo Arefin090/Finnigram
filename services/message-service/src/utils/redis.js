@@ -83,6 +83,16 @@ const invalidateConversationCache = async (conversationId) => {
   }
 };
 
+// Publish message events for real-time service
+const publishMessage = async (event, data) => {
+  try {
+    await client.publish(event, JSON.stringify(data));
+    logger.info(`Published message event: ${event}`);
+  } catch (error) {
+    logger.error('Error publishing message event:', error);
+  }
+};
+
 module.exports = {
   client,
   connectRedis,
@@ -90,5 +100,6 @@ module.exports = {
   getCachedConversationData,
   cacheUserConversations,
   getCachedUserConversations,
-  invalidateConversationCache
+  invalidateConversationCache,
+  publishMessage
 };

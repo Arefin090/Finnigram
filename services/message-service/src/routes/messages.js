@@ -2,7 +2,7 @@ const express = require('express');
 const Message = require('../models/Message');
 const Conversation = require('../models/Conversation');
 const { verifyToken } = require('../middleware/auth');
-const { invalidateConversationCache } = require('../utils/redis');
+const { invalidateConversationCache, publishMessage } = require('../utils/redis');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -81,6 +81,9 @@ router.post('/', verifyToken, async (req, res, next) => {
     
     // Get the complete message with attachments
     const completeMessage = await Message.findById(message.id);
+    
+    // Publish message event for real-time service
+    await publishMessage('new_message', completeMessage);
     
     res.status(201).json({
       message: 'Message sent successfully',
