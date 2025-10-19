@@ -76,7 +76,14 @@ const ConversationsScreen = ({ navigation }) => {
     }
     
     // For direct messages, show the other user's name
-    // This is simplified - in a real app you'd fetch participant details
+    if (conversation.participants && conversation.participants.length > 0) {
+      // Find the other participant (not the current user)
+      const otherParticipant = conversation.participants.find(p => p.user_id !== user.id);
+      if (otherParticipant) {
+        return otherParticipant.display_name || otherParticipant.username || 'Unknown User';
+      }
+    }
+    
     return conversation.name || 'Direct Message';
   };
 

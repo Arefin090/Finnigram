@@ -127,6 +127,7 @@ export const ChatProvider = ({ children }) => {
 
     // New message listener
     const unsubscribeNewMessage = socketService.on('new_message', (message) => {
+      console.log('📨 Received new message via socket:', message);
       dispatch({
         type: 'ADD_MESSAGE',
         payload: { conversationId: message.conversation_id, message }
@@ -186,6 +187,15 @@ export const ChatProvider = ({ children }) => {
       dispatch({ type: 'UPDATE_USER_PRESENCE', payload: data });
     });
 
+    // New conversation created (for when someone adds you to a conversation)
+    const unsubscribeNewConversation = socketService.on('conversation_created', (conversation) => {
+      console.log('🆕 New conversation received via socket:', conversation);
+      dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
+      
+      // Also refresh conversations to get full participant data
+      loadConversations();
+    });
+
     // Cleanup function
     return () => {
       unsubscribeNewMessage();
@@ -194,6 +204,7 @@ export const ChatProvider = ({ children }) => {
       unsubscribeTyping();
       unsubscribeOnlineUsers();
       unsubscribePresence();
+      unsubscribeNewConversation();
     };
   }, [isAuthenticated, socketService.isConnected, state.typingUsers]);
 
@@ -213,7 +224,10 @@ export const ChatProvider = ({ children }) => {
   // Load messages for a conversation
   const loadMessages = async (conversationId, limit = 50, offset = 0) => {
     try {
+      console.log('📥 Loading messages for conversation:', conversationId);
       const response = await messageApiExports.getMessages(conversationId, limit, offset);
+      console.log('📄 Messages loaded:', response.data.messages?.length || 0, 'messages');
+      
       dispatch({
         type: 'SET_MESSAGES',
         payload: { conversationId, messages: response.data.messages }
@@ -224,7 +238,7 @@ export const ChatProvider = ({ children }) => {
       
       return response.data.messages;
     } catch (error) {
-      console.error('Failed to load messages:', error);
+      console.error('❌ Failed to load messages:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to load messages' });
       return [];
     }
@@ -233,6 +247,7 @@ export const ChatProvider = ({ children }) => {
   // Send a message
   const sendMessage = async (conversationId, content, messageType = 'text', replyTo = null) => {
     try {
+      console.log('🚀 Sending message:', { conversationId, content });
       const response = await messageApiExports.sendMessage({
         conversationId,
         content,
@@ -240,10 +255,12 @@ export const ChatProvider = ({ children }) => {
         replyTo
       });
       
+      console.log('✅ Message sent successfully:', response.data);
+      
       // Message will be added via socket listener
       return response.data.data;
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('❌ Failed to send message:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to send message' });
       throw error;
     }
