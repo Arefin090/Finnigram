@@ -1,12 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const BASE_URL = __DEV__ ? 'http://localhost' : 'https://api.finnigram.app';
-
-// Service URLs
-export const USER_SERVICE_URL = `${BASE_URL}:3001/api`;
-export const MESSAGE_SERVICE_URL = `${BASE_URL}:3002/api`;
-export const REALTIME_SERVICE_URL = `${BASE_URL}:3003`;
+import { USER_SERVICE_URL, MESSAGE_SERVICE_URL, REALTIME_SERVICE_URL } from '../config/environment';
 
 // Create axios instances for each service
 const userApi = axios.create({

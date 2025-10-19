@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { REALTIME_SERVICE_URL } from '../config/environment';
 
 class SocketService {
   constructor() {
@@ -16,9 +17,7 @@ class SocketService {
         throw new Error('No access token found');
       }
 
-      const SOCKET_URL = __DEV__ 
-        ? 'http://localhost:3003' 
-        : 'https://realtime.finnigram.app';
+      const SOCKET_URL = REALTIME_SERVICE_URL;
 
       this.socket = io(SOCKET_URL, {
         auth: { token },
