@@ -62,13 +62,35 @@ const UserSearchScreen = ({ navigation }) => {
   };
 
   const handleStartConversation = async (selectedUser) => {
+    if (creatingConversation) return;
+    
+    setCreatingConversation(true);
+    
     try {
-      Alert.alert('Starting Conversation', `This will start a conversation with ${selectedUser.displayName || selectedUser.username}`);
-      // TODO: Implement conversation creation
-      // For now, just show alert
+      // Create a direct conversation
+      const conversationData = {
+        type: 'direct',
+        participants: [selectedUser.id],
+      };
+      
+      const response = await messageApiExports.createConversation(conversationData);
+      const conversation = response.data.conversation;
+      
+      // Refresh conversations list
+      await loadConversations();
+      
+      // Navigate to the new conversation
+      navigation.navigate('Chat', {
+        conversationId: conversation.id,
+        conversationName: selectedUser.displayName || selectedUser.username,
+        conversationType: 'direct',
+      });
+      
     } catch (error) {
       console.error('Start conversation error:', error);
       Alert.alert('Error', 'Failed to start conversation. Please try again.');
+    } finally {
+      setCreatingConversation(false);
     }
   };
 
@@ -100,7 +122,11 @@ const UserSearchScreen = ({ navigation }) => {
         <Text style={styles.username}>@{item.username}</Text>
       </View>
       
-      <Ionicons name="add-circle-outline" size={24} color="#4facfe" />
+      {creatingConversation ? (
+        <Text style={styles.loadingText}>Starting...</Text>
+      ) : (
+        <Ionicons name="add-circle-outline" size={24} color="#4facfe" />
+      )}
     </TouchableOpacity>
   );
 
@@ -348,6 +374,11 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#8E8E93',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#4facfe',
+    fontWeight: '500',
   },
 });
 
