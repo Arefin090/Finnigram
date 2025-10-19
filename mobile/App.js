@@ -6,12 +6,14 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ChatProvider } from './src/context/ChatContext';
+import { ThemeProvider } from './src/context/ThemeContext';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ConversationsScreen from './src/screens/ConversationsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import UserSearchScreen from './src/screens/UserSearchScreen';
 import LoadingScreen from './src/components/LoadingScreen';
 
 const Stack = createStackNavigator();
@@ -34,27 +36,20 @@ const AuthStack = () => (
 const ChatStack = () => (
   <Stack.Navigator 
     screenOptions={{
-      headerStyle: {
-        backgroundColor: '#007AFF',
-      },
-      headerTintColor: '#fff',
-      headerTitleStyle: {
-        fontWeight: '600',
-      },
+      headerShown: false,
     }}
   >
     <Stack.Screen 
       name="Conversations" 
       component={ConversationsScreen}
-      options={{ title: 'Finnigram' }}
     />
     <Stack.Screen 
       name="Chat" 
       component={ChatScreen}
-      options={({ route }) => ({ 
-        title: route.params?.conversationName || 'Chat',
-        headerBackTitleVisible: false,
-      })}
+    />
+    <Stack.Screen 
+      name="UserSearch" 
+      component={UserSearchScreen}
     />
   </Stack.Navigator>
 );
@@ -95,9 +90,11 @@ const AppNavigator = () => {
   return (
     <NavigationContainer>
       {isAuthenticated ? (
-        <ChatProvider>
-          <MainTabs />
-        </ChatProvider>
+        <ThemeProvider>
+          <ChatProvider>
+            <MainTabs />
+          </ChatProvider>
+        </ThemeProvider>
       ) : (
         <AuthStack />
       )}
