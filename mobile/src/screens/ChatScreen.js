@@ -25,7 +25,7 @@ const { width } = Dimensions.get('window');
 const ChatScreen = ({ route, navigation }) => {
   const { conversationId, conversationName } = route.params;
   const { user } = useAuth();
-  const { updateConversation } = useChat();
+  const { updateConversationWithSort } = useChat();
 
   // Local state for this conversation only
   const [messages, setMessages] = useState([]);
@@ -172,11 +172,13 @@ const ChatScreen = ({ route, navigation }) => {
           
           const newMessages = [...prevMessages, message];
           
-          // Update conversation preview in global state
-          updateConversation(conversationId, {
-            last_message: message.content,
-            last_message_at: message.created_at,
-          });
+          // Update conversation preview in global state (defer to avoid render cycle conflicts)
+          setTimeout(() => {
+            updateConversationWithSort(conversationId, {
+              last_message: message.content,
+              last_message_at: message.created_at,
+            });
+          }, 0);
           
           // Scroll to bottom
           setTimeout(() => {

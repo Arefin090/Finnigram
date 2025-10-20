@@ -33,6 +33,21 @@ const chatReducer = (state, action) => {
         ),
       };
     
+    case 'UPDATE_CONVERSATION_WITH_SORT':
+      const updatedConversations = state.conversations.map(conv =>
+        conv.id === action.payload.id ? { ...conv, ...action.payload } : conv
+      );
+      
+      // Sort by last_message_at (most recent first)
+      updatedConversations.sort((a, b) => 
+        new Date(b.last_message_at || b.created_at) - new Date(a.last_message_at || a.created_at)
+      );
+      
+      return {
+        ...state,
+        conversations: updatedConversations,
+      };
+    
     case 'ERROR':
       return { ...state, loading: false, error: action.payload };
     
@@ -73,8 +88,8 @@ export const ChatProvider = ({ children }) => {
     const unsubscribeGlobalMessages = socketService.on('new_message', (message) => {
       console.log('📨 Global message received for conversation:', message.conversation_id);
       
-      // Update the conversation preview in the list (don't join rooms, just update UI)
-      updateConversation(message.conversation_id, {
+      // Update the conversation preview and re-sort conversations by latest message
+      updateConversationWithSort(message.conversation_id, {
         last_message: message.content,
         last_message_at: message.created_at,
       });
@@ -129,6 +144,14 @@ export const ChatProvider = ({ children }) => {
     });
   };
 
+  // Update conversation and re-sort by latest message
+  const updateConversationWithSort = (conversationId, updates) => {
+    dispatch({
+      type: 'UPDATE_CONVERSATION_WITH_SORT',
+      payload: { id: conversationId, ...updates }
+    });
+  };
+
   const clearError = () => {
     dispatch({ type: 'CLEAR_ERROR' });
   };
@@ -138,6 +161,7 @@ export const ChatProvider = ({ children }) => {
     loadConversations,
     createConversation,
     updateConversation,
+    updateConversationWithSort,
     clearError,
   };
 

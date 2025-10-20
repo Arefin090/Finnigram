@@ -57,12 +57,23 @@ const initializeDatabase = async () => {
         content TEXT NOT NULL,
         message_type VARCHAR(20) DEFAULT 'text',
         reply_to INTEGER,
+        status VARCHAR(20) DEFAULT 'sent',
+        delivered_at TIMESTAMP,
+        read_at TIMESTAMP,
         edited_at TIMESTAMP,
         deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
         FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE SET NULL
       )
+    `);
+
+    // Add message status columns if they don't exist (for existing databases)
+    await client.query(`
+      ALTER TABLE messages 
+      ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'sent',
+      ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS read_at TIMESTAMP
     `);
 
     // Create message attachments table

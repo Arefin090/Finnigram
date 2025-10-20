@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Animated,
   Platform,
   Dimensions,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -18,6 +20,11 @@ import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const ConversationsScreen = ({ navigation }) => {
   const { user } = useAuth();
@@ -34,6 +41,7 @@ const ConversationsScreen = ({ navigation }) => {
   const [searchVisible, setSearchVisible] = useState(false);
   const searchAnimation = new Animated.Value(0);
   const fabAnimation = new Animated.Value(1);
+  const prevConversationsLength = useRef(conversations.length);
 
   useEffect(() => {
     loadConversations();
@@ -45,6 +53,24 @@ const ConversationsScreen = ({ navigation }) => {
       clearError();
     }
   }, [error]);
+
+  // Animate when conversations list changes (new conversations added)
+  useEffect(() => {
+    if (conversations.length > prevConversationsLength.current) {
+      // Configure smooth slide-in animation for new conversations
+      LayoutAnimation.configureNext({
+        duration: 300,
+        create: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+        update: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+        },
+      });
+    }
+    prevConversationsLength.current = conversations.length;
+  }, [conversations]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -114,13 +140,9 @@ const ConversationsScreen = ({ navigation }) => {
   const renderConversation = useCallback(({ item, index }) => (
     <Animated.View style={[
       styles.conversationWrapper,
-      { 
-        transform: [{ 
-          translateY: new Animated.Value(50).interpolate({
-            inputRange: [0, 50],
-            outputRange: [0, 0],
-          })
-        }] 
+      {
+        opacity: 1,
+        transform: [{ translateY: 0 }]
       }
     ]}>
       <TouchableOpacity
