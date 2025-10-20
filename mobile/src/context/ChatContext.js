@@ -93,6 +93,19 @@ export const ChatProvider = ({ children }) => {
         last_message: message.content,
         last_message_at: message.created_at,
       });
+
+      // AUTO-DELIVERY: Mark message as delivered globally (even if not in the specific chat)
+      if (message.sender_id !== user.id) {
+        setTimeout(async () => {
+          try {
+            const { messageApiExports } = require('../services/api');
+            await messageApiExports.markMessageAsDelivered(message.id);
+            console.log('✅ Global auto-marked message as delivered:', message.id);
+          } catch (error) {
+            console.error('❌ Failed to globally auto-mark message as delivered:', error);
+          }
+        }, 100);
+      }
     });
 
     // Cleanup function

@@ -93,6 +93,8 @@ export const messageApiExports = {
   removeParticipant: (conversationId, userId) => 
     messageApi.delete(`/conversations/${conversationId}/participants/${userId}`),
   markAsRead: (conversationId) => messageApi.patch(`/conversations/${conversationId}/read`),
+  markMessageAsDelivered: (messageId) => messageApi.patch(`/messages/${messageId}/delivered`),
+  markMessageAsRead: (messageId) => messageApi.patch(`/messages/${messageId}/read`),
   getMessages: (conversationId, limit = 50, offset = 0) => 
     messageApi.get(`/messages/conversations/${conversationId}`, { params: { limit, offset } }),
   sendMessage: (data) => messageApi.post('/messages', data),

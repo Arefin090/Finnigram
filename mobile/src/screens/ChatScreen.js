@@ -102,6 +102,16 @@ const ChatScreen = ({ route, navigation }) => {
     loadMessages();
     joinConversation();
     
+    // AUTO-READ: Mark conversation as read when user opens it
+    setTimeout(async () => {
+      try {
+        await messageApiExports.markAsRead(conversationId);
+        console.log('✅ Auto-marked conversation as read:', conversationId);
+      } catch (error) {
+        console.error('❌ Failed to auto-mark conversation as read:', error);
+      }
+    }, 500); // Small delay to ensure messages are loaded first
+    
     return () => {
       leaveConversation();
     };
@@ -187,6 +197,8 @@ const ChatScreen = ({ route, navigation }) => {
           
           return newMessages;
         });
+
+        // NOTE: Auto-delivery is now handled globally in ChatContext, not here
       }
     });
 
@@ -336,21 +348,27 @@ const ChatScreen = ({ route, navigation }) => {
     
     switch (message.status) {
       case 'sent':
+        // Single gray checkmark - message sent to server
         return <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.6)" style={styles.statusIcon} />;
+      
       case 'delivered':
+        // Double gray checkmarks - message delivered to recipient's device
         return (
           <View style={styles.statusIconContainer}>
             <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheck]} />
             <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheckSecond]} />
           </View>
         );
+      
       case 'read':
+        // Blue double checkmarks - message read by recipient (like WhatsApp)
         return (
           <View style={styles.statusIconContainer}>
             <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheck]} />
             <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheckSecond]} />
           </View>
         );
+      
       default:
         return null;
     }

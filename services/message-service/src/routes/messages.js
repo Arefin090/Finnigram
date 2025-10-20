@@ -26,13 +26,8 @@ router.get('/conversations/:conversationId', verifyToken, async (req, res, next)
       parseInt(offset)
     );
     
-    // Mark messages as delivered for this user (when they view the conversation)
-    try {
-      await Message.markConversationAsDelivered(conversationId, userId);
-    } catch (deliveryError) {
-      logger.error('Failed to mark messages as delivered:', deliveryError);
-      // Don't fail the request if delivery marking fails
-    }
+    // NOTE: Removed automatic delivery marking from here - delivery now happens 
+    // when messages are received via socket, not when they're fetched
     
     res.json({ messages });
   } catch (error) {
