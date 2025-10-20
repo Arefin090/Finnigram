@@ -22,7 +22,7 @@ router.get('/', verifyToken, async (req, res, next) => {
       ORDER BY c.created_at DESC
     `, [userId]);
     
-    // For each conversation, get participant details
+    // For each conversation, get participant details and latest message
     const conversationsWithParticipants = await Promise.all(
       conversationsResult.rows.map(async (conversation) => {
         const participantsResult = await pool.query(`
@@ -32,11 +32,29 @@ router.get('/', verifyToken, async (req, res, next) => {
           WHERE cp.conversation_id = $1
         `, [conversation.id]);
         
+        // Get the latest message for preview
+        const latestMessageResult = await pool.query(`
+          SELECT content, created_at
+          FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+        `, [conversation.id]);
+        
+        const latestMessage = latestMessageResult.rows[0];
+        
         return {
           ...conversation,
-          participants: participantsResult.rows
+          participants: participantsResult.rows,
+          last_message: latestMessage?.content || null,
+          last_message_at: latestMessage?.created_at || conversation.created_at
         };
       })
+    );
+    
+    // Sort conversations by last message time (most recent first)
+    conversationsWithParticipants.sort((a, b) => 
+      new Date(b.last_message_at) - new Date(a.last_message_at)
     );
     
     logger.info(`Fetched ${conversationsWithParticipants.length} conversations for user ${userId}`);
