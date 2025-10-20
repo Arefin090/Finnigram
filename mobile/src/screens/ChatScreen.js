@@ -9,14 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Animated,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
+import { messageApiExports } from '../services/api';
 import socketService from '../services/socket';
 
 const { width } = Dimensions.get('window');
@@ -24,106 +25,237 @@ const { width } = Dimensions.get('window');
 const ChatScreen = ({ route, navigation }) => {
   const { conversationId, conversationName } = route.params;
   const { user } = useAuth();
-  const { 
-    messages, 
-    conversations,
-    typingUsers, 
-    loadMessages, 
-    sendMessage, 
-    startTyping, 
-    stopTyping,
-    markAsRead,
-    error,
-    clearError 
-  } = useChat();
+  const { updateConversation } = useChat();
 
+  // Local state for this conversation only
+  const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
+  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [typingUsers, setTypingUsers] = useState([]);
+
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
-  const [inputHeight, setInputHeight] = useState(40);
-  const sendButtonScale = useRef(new Animated.Value(1)).current;
-  const messageAnimation = useRef(new Animated.Value(0)).current;
-
-  const conversationMessages = messages[conversationId] || [];
-  const typingUsersList = typingUsers[conversationId] || [];
   
-  // Debug: Log when messages change and scroll to bottom
-  useEffect(() => {
-    console.log('💬 Messages for conversation', conversationId, 'changed:', conversationMessages.length, 'messages');
-    if (conversationMessages.length > 0) {
-      console.log('📝 Message details:', conversationMessages.map(m => ({ 
-        id: m.id, 
-        content: m.content.slice(0, 20) + '...', 
-        sender: m.sender_id 
-      })));
-      
-      // Scroll to bottom when messages are loaded or updated
-      setTimeout(() => {
-        console.log('⬇️ Auto-scrolling to bottom after messages changed');
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 100);
-      
-      // Also force another scroll after a longer delay to ensure visibility
-      setTimeout(() => {
-        console.log('🔄 Force scroll to ensure messages are visible');
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 500);
-    }
-  }, [conversationMessages, conversationId]);
+  // Animated values for typing dots
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
+  // Start typing animation when users are typing
+  useEffect(() => {
+    if (typingUsers.length > 0) {
+      startTypingAnimation();
+    } else {
+      stopTypingAnimation();
+    }
+  }, [typingUsers]);
+
+  // Typing dots animation
+  const startTypingAnimation = () => {
+    // Reset all dots first
+    dot1Anim.setValue(0);
+    dot2Anim.setValue(0);
+    dot3Anim.setValue(0);
+
+    const createBounceAnimation = (animValue, delay = 0) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(animValue, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.delay(400), // Pause between cycles
+        ])
+      );
+    };
+
+    // Start animations with staggered delays for bouncing effect
+    Animated.parallel([
+      createBounceAnimation(dot1Anim, 0),
+      createBounceAnimation(dot2Anim, 150),
+      createBounceAnimation(dot3Anim, 300),
+    ]).start();
+  };
+
+  const stopTypingAnimation = () => {
+    dot1Anim.stopAnimation();
+    dot2Anim.stopAnimation(); 
+    dot3Anim.stopAnimation();
+    
+    // Reset to initial positions
+    dot1Anim.setValue(0);
+    dot2Anim.setValue(0);
+    dot3Anim.setValue(0);
+  };
+
+  // Load messages when component mounts
   useEffect(() => {
     console.log('💬 ChatScreen mounted for conversation:', conversationId);
-    console.log('💬 Current messages for this conversation:', conversationMessages?.length || 0);
-    
-    if (conversationId) {
-      // Since we auto-join all conversation rooms, messages should already be in state
-      if (conversationMessages.length > 0) {
-        console.log('✅ Messages already synced via real-time, using cached messages');
-        setMessagesLoading(false);
-        markAsRead(conversationId);
-      } else {
-        console.log('📥 No messages in state, loading from API (first time or missed messages)');
-        setMessagesLoading(true);
-        loadMessages(conversationId).then(() => {
-          console.log('📥 Messages loaded from API, setting loading to false');
-          setMessagesLoading(false);
-        }).catch((error) => {
-          console.error('❌ Failed to load messages:', error);
-          setMessagesLoading(false);
-        });
-        markAsRead(conversationId);
-      }
-      
-      // Socket room should already be joined via auto-join, but ensure it
-      if (socketService.isConnected) {
-        socketService.joinConversation(conversationId);
-      }
-    } else {
-      console.error('❌ No conversationId provided to ChatScreen');
-      setMessagesLoading(false);
-    }
+    loadMessages();
+    joinConversation();
     
     return () => {
-      // Stop typing when leaving chat
-      stopTyping(conversationId);
+      leaveConversation();
     };
   }, [conversationId]);
 
-  useEffect(() => {
-    if (error) {
-      Alert.alert('Error', error);
-      clearError();
+  // Load messages from API
+  const loadMessages = async () => {
+    try {
+      console.log('📥 Loading messages from API for conversation:', conversationId);
+      setLoading(true);
+      
+      const response = await messageApiExports.getMessages(conversationId);
+      const loadedMessages = response.data.messages || [];
+      
+      console.log('✅ Loaded', loadedMessages.length, 'messages from API');
+      setMessages(loadedMessages);
+      
+      // Scroll to bottom after messages load
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      
+    } catch (error) {
+      console.error('❌ Failed to load messages:', error);
+      Alert.alert('Error', 'Failed to load messages');
+    } finally {
+      setLoading(false);
     }
-  }, [error]);
+  };
 
+  // Join conversation socket room
+  const joinConversation = () => {
+    if (socketService.isConnected) {
+      console.log('🔗 Joining socket room for conversation:', conversationId);
+      socketService.joinConversation(conversationId);
+      
+      // Set up socket listeners for this conversation
+      setupSocketListeners();
+    }
+  };
+
+  // Leave conversation socket room
+  const leaveConversation = () => {
+    if (socketService.isConnected) {
+      console.log('🚪 Leaving socket room for conversation:', conversationId);
+      socketService.leaveConversation(conversationId);
+      
+      // Clean up socket listeners
+      cleanupSocketListeners();
+    }
+  };
+
+  // Set up socket event listeners
+  const setupSocketListeners = () => {
+    // Listen for new messages
+    const unsubscribeNewMessage = socketService.on('new_message', (message) => {
+      if (message.conversation_id === conversationId) {
+        console.log('📨 Received new message via socket:', message.id);
+        
+        // Add message to local state
+        setMessages(prevMessages => {
+          // Check if message already exists to prevent duplicates
+          const messageExists = prevMessages.some(m => m.id === message.id);
+          if (messageExists) {
+            console.log('⚠️ Message already exists, skipping:', message.id);
+            return prevMessages;
+          }
+          
+          const newMessages = [...prevMessages, message];
+          
+          // Update conversation preview in global state
+          updateConversation(conversationId, {
+            last_message: message.content,
+            last_message_at: message.created_at,
+          });
+          
+          // Scroll to bottom
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+          
+          return newMessages;
+        });
+      }
+    });
+
+    // Listen for typing indicators
+    const unsubscribeTyping = socketService.on('user_typing', (data) => {
+      if (data.conversationId === conversationId && data.userId !== user.id) {
+        setTypingUsers(prevTyping => {
+          if (data.isTyping) {
+            return [...new Set([...prevTyping, data.userId])];
+          } else {
+            return prevTyping.filter(id => id !== data.userId);
+          }
+        });
+      }
+    });
+
+    // Store unsubscribe functions for cleanup
+    socketService._currentUnsubscribers = [
+      unsubscribeNewMessage,
+      unsubscribeTyping,
+    ];
+  };
+
+  // Clean up socket listeners
+  const cleanupSocketListeners = () => {
+    if (socketService._currentUnsubscribers) {
+      socketService._currentUnsubscribers.forEach(unsubscribe => unsubscribe());
+      socketService._currentUnsubscribers = null;
+    }
+  };
+
+  // Send a message
+  const handleSendMessage = async () => {
+    const text = messageText.trim();
+    if (!text) return;
+
+    setSending(true);
+    setMessageText('');
+    
+    // Stop typing indicator
+    socketService.stopTyping(conversationId);
+    
+    try {
+      console.log('🚀 Sending message:', text);
+      
+      const response = await messageApiExports.sendMessage({
+        conversationId,
+        content: text,
+        messageType: 'text'
+      });
+      
+      console.log('✅ Message sent successfully');
+      
+      // Message will be added via socket listener, no need to add manually
+      
+    } catch (error) {
+      console.error('❌ Failed to send message:', error);
+      Alert.alert('Error', 'Failed to send message');
+      setMessageText(text); // Restore message on error
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Handle typing
   const handleTextChange = (text) => {
     setMessageText(text);
     
     if (text.trim()) {
       // Start typing indicator
-      startTyping(conversationId);
+      socketService.startTyping(conversationId);
       
       // Clear existing timeout
       if (typingTimeoutRef.current) {
@@ -132,165 +264,121 @@ const ChatScreen = ({ route, navigation }) => {
       
       // Stop typing after 3 seconds of inactivity
       typingTimeoutRef.current = setTimeout(() => {
-        stopTyping(conversationId);
+        socketService.stopTyping(conversationId);
       }, 3000);
     } else {
-      stopTyping(conversationId);
+      socketService.stopTyping(conversationId);
     }
   };
 
-  const handleSendMessage = async () => {
-    const text = messageText.trim();
-    if (!text) return;
-
-    // Animate send button
-    Animated.sequence([
-      Animated.timing(sendButtonScale, {
-        toValue: 0.8,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sendButtonScale, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    setSending(true);
-    setMessageText('');
-    
-    // Stop typing indicator
-    stopTyping(conversationId);
-    
-    try {
-      await sendMessage(conversationId, text);
-      
-      // Animate new message
-      Animated.timing(messageAnimation, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send message');
-      setMessageText(text); // Restore message
-    } finally {
-      setSending(false);
-    }
-  };
-
+  // Format message time
   const formatMessageTime = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const formatDateHeader = (timestamp) => {
-    const date = new Date(timestamp);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    }
-    
-    return date.toLocaleDateString();
-  };
-
-  const shouldShowDateHeader = (currentMessage, previousMessage) => {
-    if (!previousMessage) return true;
-    
-    const currentDate = new Date(currentMessage.created_at).toDateString();
-    const previousDate = new Date(previousMessage.created_at).toDateString();
-    
-    return currentDate !== previousDate;
-  };
-
-  const renderMessage = ({ item, index }) => {
+  // Render message item
+  const renderMessage = ({ item }) => {
     const isMyMessage = item.sender_id === user.id;
-    const previousMessage = index > 0 ? conversationMessages[index - 1] : null;
-    const showDateHeader = shouldShowDateHeader(item, previousMessage);
-    const isLastMessage = index === conversationMessages.length - 1;
 
     return (
-      <Animated.View style={{
-        opacity: isLastMessage ? messageAnimation : 1,
-        transform: [{
-          translateY: isLastMessage ? messageAnimation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0],
-          }) : 0
-        }]
-      }}>
-        {showDateHeader && (
-          <View style={styles.dateHeader}>
-            <View style={styles.dateHeaderBubble}>
-              <Text style={styles.dateHeaderText}>
-                {formatDateHeader(item.created_at)}
-              </Text>
-            </View>
-          </View>
-        )}
+      <View style={[
+        styles.messageContainer,
+        isMyMessage ? styles.myMessage : styles.otherMessage
+      ]}>
         <View style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessage : styles.otherMessage
+          styles.messageBubble,
+          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
         ]}>
-          <View style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
+          <Text style={[
+            styles.messageText,
+            isMyMessage ? styles.myMessageText : styles.otherMessageText
           ]}>
-            <Text style={[
-              styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.otherMessageText
-            ]}>
-              {item.content}
-            </Text>
-            <View style={styles.messageFooter}>
-              <Text style={[
-                styles.messageTime,
-                isMyMessage ? styles.myMessageTime : styles.otherMessageTime
-              ]}>
-                {formatMessageTime(item.created_at)}
-                {item.edited_at && ' (edited)'}
-              </Text>
-              {isMyMessage && (
-                <Ionicons 
-                  name="checkmark-done" 
-                  size={14} 
-                  color="rgba(255, 255, 255, 0.7)" 
-                  style={styles.messageStatus}
-                />
-              )}
-            </View>
-          </View>
+            {item.content}
+          </Text>
+          <Text style={[
+            styles.messageTime,
+            isMyMessage ? styles.myMessageTime : styles.otherMessageTime
+          ]}>
+            {formatMessageTime(item.created_at)}
+          </Text>
         </View>
-      </Animated.View>
+      </View>
     );
   };
 
+  // Render typing indicator with animated dots
   const renderTypingIndicator = () => {
-    if (typingUsersList.length === 0) return null;
+    if (typingUsers.length === 0) return null;
 
     return (
       <Animated.View style={styles.typingContainer}>
         <View style={styles.typingBubble}>
           <View style={styles.typingDots}>
-            <View style={[styles.typingDot, styles.typingDot1]} />
-            <View style={[styles.typingDot, styles.typingDot2]} />
-            <View style={[styles.typingDot, styles.typingDot3]} />
+            <Animated.View 
+              style={[
+                styles.typingDot, 
+                {
+                  transform: [{
+                    translateY: dot1Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -6],
+                    })
+                  }],
+                  opacity: dot1Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.3, 0.9],
+                  })
+                }
+              ]} 
+            />
+            <Animated.View 
+              style={[
+                styles.typingDot, 
+                {
+                  transform: [{
+                    translateY: dot2Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -6],
+                    })
+                  }],
+                  opacity: dot2Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.3, 0.9],
+                  })
+                }
+              ]} 
+            />
+            <Animated.View 
+              style={[
+                styles.typingDot, 
+                {
+                  transform: [{
+                    translateY: dot3Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -6],
+                    })
+                  }],
+                  opacity: dot3Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.3, 0.9],
+                  })
+                }
+              ]} 
+            />
           </View>
         </View>
       </Animated.View>
     );
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading messages...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView 
@@ -300,100 +388,64 @@ const ChatScreen = ({ route, navigation }) => {
     >
       <StatusBar style="light" />
       
-      {messagesLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading messages...</Text>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={conversationMessages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id.toString()}
-          key={`messages-${conversationId}-${conversationMessages.length}`}
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContainer}
-          inverted={false}
-          removeClippedSubviews={false}
-          initialNumToRender={20}
-          onContentSizeChange={() => {
-            console.log('📏 FlatList content size changed, scrolling to end');
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
-          }}
-          onLayout={() => {
-            console.log('📐 FlatList layout changed');
-            if (conversationMessages.length > 0) {
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }, 100);
-            }
-          }}
-          ListFooterComponent={renderTypingIndicator}
-          ListEmptyComponent={() => (
-            <View style={styles.emptyMessagesContainer}>
-              <Text style={styles.emptyMessagesText}>No messages yet</Text>
-              <Text style={styles.emptyMessagesSubtext}>Start the conversation!</Text>
-            </View>
-          )}
-        />
-      )}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={renderMessage}
+        keyExtractor={(item) => item.id.toString()}
+        style={styles.messagesList}
+        contentContainerStyle={styles.messagesContainer}
+        ListFooterComponent={renderTypingIndicator}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No messages yet</Text>
+            <Text style={styles.emptySubtext}>Start the conversation!</Text>
+          </View>
+        )}
+        onContentSizeChange={() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }}
+      />
 
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
-          <TouchableOpacity style={styles.attachButton}>
-            <Ionicons name="add" size={24} color="#8E8E93" />
-          </TouchableOpacity>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Message..."
+            placeholderTextColor="#8E8E93"
+            value={messageText}
+            onChangeText={handleTextChange}
+            multiline
+            maxLength={4000}
+            editable={!sending}
+          />
           
-          <View style={[styles.textInputContainer, { minHeight: Math.max(40, inputHeight) }]}>
-            <TextInput
-              style={[styles.textInput, { height: Math.max(40, inputHeight) }]}
-              placeholder="Message..."
-              placeholderTextColor="#8E8E93"
-              value={messageText}
-              onChangeText={handleTextChange}
-              onContentSizeChange={(event) => {
-                setInputHeight(Math.min(120, Math.max(40, event.nativeEvent.contentSize.height)));
-              }}
-              multiline
-              maxLength={4000}
-              editable={!sending}
-              blurOnSubmit={false}
-            />
-          </View>
-
-          <Animated.View style={[
-            styles.sendButtonContainer,
-            { transform: [{ scale: sendButtonScale }] }
-          ]}>
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                messageText.trim() && !sending ? styles.sendButtonActive : styles.sendButtonInactive
-              ]}
-              onPress={handleSendMessage}
-              disabled={!messageText.trim() || sending}
-              activeOpacity={0.7}
-            >
-              {messageText.trim() && !sending ? (
-                <LinearGradient
-                  colors={['#4facfe', '#00f2fe']}
-                  style={styles.sendButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Ionicons name="send" size={18} color="#FFFFFF" />
-                </LinearGradient>
-              ) : (
-                <Ionicons 
-                  name={sending ? 'hourglass' : 'send'} 
-                  size={18} 
-                  color="#8E8E93" 
-                />
-              )}
-            </TouchableOpacity>
-          </Animated.View>
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              messageText.trim() && !sending ? styles.sendButtonActive : styles.sendButtonInactive
+            ]}
+            onPress={handleSendMessage}
+            disabled={!messageText.trim() || sending}
+            activeOpacity={0.7}
+          >
+            {messageText.trim() && !sending ? (
+              <LinearGradient
+                colors={['#4facfe', '#00f2fe']}
+                style={styles.sendButtonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="send" size={18} color="#FFFFFF" />
+              </LinearGradient>
+            ) : (
+              <Ionicons 
+                name={sending ? 'hourglass' : 'send'} 
+                size={18} 
+                color="#8E8E93" 
+              />
+            )}
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -406,7 +458,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2F2F7',
   },
   
-  // Message List Styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  
   messagesList: {
     flex: 1,
   },
@@ -415,24 +478,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
 
-  // Date Header Styles
-  dateHeader: {
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  dateHeaderBubble: {
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  dateHeaderText: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-
-  // Message Styles
   messageContainer: {
     marginHorizontal: 16,
     marginVertical: 3,
@@ -481,15 +526,10 @@ const styles = StyleSheet.create({
   otherMessageText: {
     color: '#000000',
   },
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    justifyContent: 'flex-end',
-  },
   messageTime: {
     fontSize: 12,
     fontWeight: '500',
+    marginTop: 6,
   },
   myMessageTime: {
     color: 'rgba(255, 255, 255, 0.8)',
@@ -497,11 +537,7 @@ const styles = StyleSheet.create({
   otherMessageTime: {
     color: '#8E8E93',
   },
-  messageStatus: {
-    marginLeft: 4,
-  },
 
-  // Typing Indicator Styles
   typingContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -515,10 +551,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E5EA',
     borderBottomLeftRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   typingDots: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   typingDot: {
     width: 8,
@@ -527,17 +575,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#8E8E93',
     marginHorizontal: 2,
   },
-  typingDot1: {
-    opacity: 0.4,
-  },
-  typingDot2: {
-    opacity: 0.7,
-  },
-  typingDot3: {
-    opacity: 1,
-  },
 
-  // Input Container Styles
   inputContainer: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
@@ -551,33 +589,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     backgroundColor: '#F2F2F7',
     borderRadius: 24,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     minHeight: 48,
   },
-  attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  textInputContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: 'transparent',
-  },
   textInput: {
+    flex: 1,
     fontSize: 16,
     color: '#000000',
     textAlignVertical: 'center',
     paddingTop: Platform.OS === 'ios' ? 8 : 0,
     paddingBottom: Platform.OS === 'ios' ? 8 : 0,
-  },
-  sendButtonContainer: {
-    marginLeft: 8,
+    marginRight: 8,
   },
   sendButton: {
     width: 40,
@@ -610,31 +633,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Loading and Empty States
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  emptyMessagesContainer: {
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
   },
-  emptyMessagesText: {
+  emptyText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#8E8E93',
     marginBottom: 8,
   },
-  emptyMessagesSubtext: {
+  emptySubtext: {
     fontSize: 14,
     color: '#C7C7CC',
   },
