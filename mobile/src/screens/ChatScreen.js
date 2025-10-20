@@ -203,10 +203,61 @@ const ChatScreen = ({ route, navigation }) => {
       }
     });
 
+    // Listen for message delivery status
+    const unsubscribeMessageDelivered = socketService.on('message_delivered', (data) => {
+      if (data.conversationId === conversationId) {
+        console.log('📬 Message delivered:', data.messageId);
+        
+        // Update message status in local state
+        setMessages(prevMessages => 
+          prevMessages.map(message => 
+            message.id === data.messageId 
+              ? { ...message, status: 'delivered', delivered_at: data.deliveredAt }
+              : message
+          )
+        );
+      }
+    });
+
+    // Listen for message read status
+    const unsubscribeMessageRead = socketService.on('message_read', (data) => {
+      if (data.conversationId === conversationId) {
+        console.log('👁️ Message read:', data.messageId);
+        
+        // Update message status in local state
+        setMessages(prevMessages => 
+          prevMessages.map(message => 
+            message.id === data.messageId 
+              ? { ...message, status: 'read', read_at: data.readAt }
+              : message
+          )
+        );
+      }
+    });
+
+    // Listen for conversation read status (when all messages are marked as read)
+    const unsubscribeConversationRead = socketService.on('conversation_read', (data) => {
+      if (data.conversationId === conversationId) {
+        console.log('👁️ Conversation read:', data.messageIds.length, 'messages');
+        
+        // Update all affected messages to read status
+        setMessages(prevMessages => 
+          prevMessages.map(message => 
+            data.messageIds.includes(message.id)
+              ? { ...message, status: 'read', read_at: data.readAt }
+              : message
+          )
+        );
+      }
+    });
+
     // Store unsubscribe functions for cleanup
     socketService._currentUnsubscribers = [
       unsubscribeNewMessage,
       unsubscribeTyping,
+      unsubscribeMessageDelivered,
+      unsubscribeMessageRead,
+      unsubscribeConversationRead,
     ];
   };
 
@@ -279,6 +330,32 @@ const ChatScreen = ({ route, navigation }) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Get message status icon
+  const getMessageStatusIcon = (message) => {
+    if (message.sender_id !== user.id) return null; // Only show status for own messages
+    
+    switch (message.status) {
+      case 'sent':
+        return <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.6)" style={styles.statusIcon} />;
+      case 'delivered':
+        return (
+          <View style={styles.statusIconContainer}>
+            <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheck]} />
+            <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheckSecond]} />
+          </View>
+        );
+      case 'read':
+        return (
+          <View style={styles.statusIconContainer}>
+            <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheck]} />
+            <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheckSecond]} />
+          </View>
+        );
+      default:
+        return null;
+    }
+  };
+
   // Render message item
   const renderMessage = ({ item }) => {
     const isMyMessage = item.sender_id === user.id;
@@ -298,12 +375,15 @@ const ChatScreen = ({ route, navigation }) => {
           ]}>
             {item.content}
           </Text>
-          <Text style={[
-            styles.messageTime,
-            isMyMessage ? styles.myMessageTime : styles.otherMessageTime
-          ]}>
-            {formatMessageTime(item.created_at)}
-          </Text>
+          <View style={styles.messageFooter}>
+            <Text style={[
+              styles.messageTime,
+              isMyMessage ? styles.myMessageTime : styles.otherMessageTime
+            ]}>
+              {formatMessageTime(item.created_at)}
+            </Text>
+            {getMessageStatusIcon(item)}
+          </View>
         </View>
       </View>
     );
@@ -528,16 +608,35 @@ const styles = StyleSheet.create({
   otherMessageText: {
     color: '#000000',
   },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 6,
+  },
   messageTime: {
     fontSize: 12,
     fontWeight: '500',
-    marginTop: 6,
   },
   myMessageTime: {
     color: 'rgba(255, 255, 255, 0.8)',
   },
   otherMessageTime: {
     color: '#8E8E93',
+  },
+  statusIconContainer: {
+    flexDirection: 'row',
+    marginLeft: 4,
+    alignItems: 'center',
+  },
+  statusIcon: {
+    marginLeft: 2,
+  },
+  doubleCheck: {
+    position: 'relative',
+  },
+  doubleCheckSecond: {
+    marginLeft: -8,
   },
 
   typingContainer: {

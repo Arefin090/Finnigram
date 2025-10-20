@@ -26,6 +26,14 @@ router.get('/conversations/:conversationId', verifyToken, async (req, res, next)
       parseInt(offset)
     );
     
+    // Mark messages as delivered for this user (when they view the conversation)
+    try {
+      await Message.markConversationAsDelivered(conversationId, userId);
+    } catch (deliveryError) {
+      logger.error('Failed to mark messages as delivered:', deliveryError);
+      // Don't fail the request if delivery marking fails
+    }
+    
     res.json({ messages });
   } catch (error) {
     next(error);
@@ -187,6 +195,148 @@ router.get('/search', verifyToken, async (req, res, next) => {
     const messages = await Message.searchMessages(userId, query.trim(), parseInt(limit));
     
     res.json({ messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Mark message as delivered
+router.patch('/:id/delivered', verifyToken, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // Get the message to check if user is a participant
+    const message = await Message.findById(id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Check if user is participant in the conversation
+    const isParticipant = await Conversation.isParticipant(message.conversation_id, userId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Don't mark own messages as delivered
+    if (message.sender_id === userId) {
+      return res.status(400).json({ error: 'Cannot mark own message as delivered' });
+    }
+    
+    const updatedMessage = await Message.markAsDelivered(id);
+    
+    if (updatedMessage) {
+      logger.info(`Message ${id} marked as delivered by user ${userId}`);
+      
+      // Publish delivery status update for real-time service
+      await publishMessage('message_delivered', {
+        messageId: id,
+        conversationId: message.conversation_id,
+        userId: userId,
+        deliveredAt: updatedMessage.delivered_at
+      });
+      
+      res.json({ 
+        message: 'Message marked as delivered',
+        data: { 
+          messageId: id, 
+          status: 'delivered', 
+          deliveredAt: updatedMessage.delivered_at 
+        }
+      });
+    } else {
+      res.status(400).json({ error: 'Message already delivered or invalid status' });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Mark message as read
+router.patch('/:id/read', verifyToken, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // Get the message to check if user is a participant
+    const message = await Message.findById(id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Check if user is participant in the conversation
+    const isParticipant = await Conversation.isParticipant(message.conversation_id, userId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Don't mark own messages as read
+    if (message.sender_id === userId) {
+      return res.status(400).json({ error: 'Cannot mark own message as read' });
+    }
+    
+    const updatedMessage = await Message.markAsRead(id);
+    
+    if (updatedMessage) {
+      logger.info(`Message ${id} marked as read by user ${userId}`);
+      
+      // Publish read status update for real-time service
+      await publishMessage('message_read', {
+        messageId: id,
+        conversationId: message.conversation_id,
+        userId: userId,
+        readAt: updatedMessage.read_at
+      });
+      
+      res.json({ 
+        message: 'Message marked as read',
+        data: { 
+          messageId: id, 
+          status: 'read', 
+          readAt: updatedMessage.read_at 
+        }
+      });
+    } else {
+      res.status(400).json({ error: 'Message already read or invalid status' });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Mark all messages in conversation as read
+router.patch('/conversations/:conversationId/read', verifyToken, async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+    
+    // Check if user is participant
+    const isParticipant = await Conversation.isParticipant(conversationId, userId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const messageIds = await Message.markConversationAsRead(conversationId, userId);
+    
+    logger.info(`${messageIds.length} messages marked as read in conversation ${conversationId} by user ${userId}`);
+    
+    // Publish read status update for real-time service
+    if (messageIds.length > 0) {
+      await publishMessage('conversation_read', {
+        conversationId: conversationId,
+        userId: userId,
+        messageIds: messageIds,
+        readAt: new Date().toISOString()
+      });
+    }
+    
+    res.json({ 
+      message: 'Messages marked as read',
+      data: { 
+        conversationId: conversationId,
+        markedCount: messageIds.length
+      }
+    });
   } catch (error) {
     next(error);
   }

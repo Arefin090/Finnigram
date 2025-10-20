@@ -198,6 +198,63 @@ const handleRedisEvents = (io, subscriber) => {
     
     logger.info(`Broadcasted new conversation ${conversation.id} to user ${userId}`);
   });
+
+  // Message delivery status events
+  subscriber.subscribe('message_delivered', (message) => {
+    const deliveryData = JSON.parse(message);
+    
+    // Broadcast delivery status to the conversation (excluding the user who marked it as delivered)
+    const sockets = Array.from(io.sockets.sockets.values())
+      .filter(socket => socket.currentConversation === deliveryData.conversationId && socket.userId !== deliveryData.userId);
+    
+    sockets.forEach(socket => {
+      socket.emit('message_delivered', {
+        messageId: deliveryData.messageId,
+        conversationId: deliveryData.conversationId,
+        deliveredAt: deliveryData.deliveredAt
+      });
+    });
+    
+    logger.info(`Broadcasted message delivery status for message ${deliveryData.messageId}`);
+  });
+
+  // Message read status events
+  subscriber.subscribe('message_read', (message) => {
+    const readData = JSON.parse(message);
+    
+    // Broadcast read status to the conversation (excluding the user who marked it as read)
+    const sockets = Array.from(io.sockets.sockets.values())
+      .filter(socket => socket.currentConversation === readData.conversationId && socket.userId !== readData.userId);
+    
+    sockets.forEach(socket => {
+      socket.emit('message_read', {
+        messageId: readData.messageId,
+        conversationId: readData.conversationId,
+        readAt: readData.readAt
+      });
+    });
+    
+    logger.info(`Broadcasted message read status for message ${readData.messageId}`);
+  });
+
+  // Conversation read status events (when all messages in conversation are marked as read)
+  subscriber.subscribe('conversation_read', (message) => {
+    const readData = JSON.parse(message);
+    
+    // Broadcast conversation read status to the conversation (excluding the user who marked it as read)
+    const sockets = Array.from(io.sockets.sockets.values())
+      .filter(socket => socket.currentConversation === readData.conversationId && socket.userId !== readData.userId);
+    
+    sockets.forEach(socket => {
+      socket.emit('conversation_read', {
+        conversationId: readData.conversationId,
+        messageIds: readData.messageIds,
+        readAt: readData.readAt
+      });
+    });
+    
+    logger.info(`Broadcasted conversation read status for conversation ${readData.conversationId} (${readData.messageIds.length} messages)`);
+  });
 };
 
 module.exports = { handleMessageEvents, handleRedisEvents };

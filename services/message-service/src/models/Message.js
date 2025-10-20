@@ -183,6 +183,88 @@ class Message {
       throw error;
     }
   }
+
+  // Update message status to delivered
+  static async markAsDelivered(messageId) {
+    try {
+      const result = await pool.query(
+        `UPDATE messages 
+         SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP 
+         WHERE id = $1 AND status = 'sent' 
+         RETURNING *`,
+        [messageId]
+      );
+      
+      if (result.rows.length > 0) {
+        logger.info(`Message marked as delivered: ${messageId}`);
+        return result.rows[0];
+      }
+      return null;
+    } catch (error) {
+      logger.error('Error marking message as delivered:', error);
+      throw error;
+    }
+  }
+
+  // Update message status to read
+  static async markAsRead(messageId) {
+    try {
+      const result = await pool.query(
+        `UPDATE messages 
+         SET status = 'read', read_at = CURRENT_TIMESTAMP 
+         WHERE id = $1 AND status IN ('sent', 'delivered') 
+         RETURNING *`,
+        [messageId]
+      );
+      
+      if (result.rows.length > 0) {
+        logger.info(`Message marked as read: ${messageId}`);
+        return result.rows[0];
+      }
+      return null;
+    } catch (error) {
+      logger.error('Error marking message as read:', error);
+      throw error;
+    }
+  }
+
+  // Mark all messages in conversation as delivered for a specific user
+  static async markConversationAsDelivered(conversationId, userId) {
+    try {
+      const result = await pool.query(
+        `UPDATE messages 
+         SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP 
+         WHERE conversation_id = $1 AND sender_id != $2 AND status = 'sent' 
+         RETURNING id`,
+        [conversationId, userId]
+      );
+      
+      logger.info(`Marked ${result.rows.length} messages as delivered in conversation ${conversationId} for user ${userId}`);
+      return result.rows.map(row => row.id);
+    } catch (error) {
+      logger.error('Error marking conversation messages as delivered:', error);
+      throw error;
+    }
+  }
+
+  // Mark all messages in conversation as read for a specific user
+  static async markConversationAsRead(conversationId, userId) {
+    try {
+      const result = await pool.query(
+        `UPDATE messages 
+         SET status = 'read', read_at = CURRENT_TIMESTAMP 
+         WHERE conversation_id = $1 AND sender_id != $2 AND status IN ('sent', 'delivered') 
+         RETURNING id`,
+        [conversationId, userId]
+      );
+      
+      logger.info(`Marked ${result.rows.length} messages as read in conversation ${conversationId} for user ${userId}`);
+      return result.rows.map(row => row.id);
+    } catch (error) {
+      logger.error('Error marking conversation messages as read:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = Message;
