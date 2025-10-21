@@ -14,6 +14,7 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
+  logger.error('Database URL:', process.env.DATABASE_URL);
   logger.error('Database connection error:', err);
 });
 
