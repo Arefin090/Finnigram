@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Conversation {
+  id          Int      @id @default(autoincrement())
+  type        String   @default("direct") @db.VarChar(20)
+  name        String?  @db.VarChar(100)
+  description String?  @db.Text
+  avatarUrl   String?  @map("avatar_url") @db.Text
+  createdBy   Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conversation_id")
+  userId         Int       @map("user_id")
+  role           String    @default("member") @db.VarChar(20)
+  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamp(6)
+  lastReadAt     DateTime? @map("last_read_at") @db.Timestamp(6)
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conversation_id")
+  senderId       Int       @map("sender_id")
+  content        String    @db.Text
+  messageType    String    @default("text") @map("message_type") @db.VarChar(20)
+  replyTo        Int?      @map("reply_to")
+  status         String    @default("sent") @db.VarChar(20)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamp(6)
+  readAt         DateTime? @map("read_at") @db.Timestamp(6)
+  editedAt       DateTime? @map("edited_at") @db.Timestamp(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  conversation    Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyToMessage  Message?            @relation("MessageReplies", fields: [replyTo], references: [id], onDelete: SetNull)
+  replies         Message[]           @relation("MessageReplies")
+  attachments     MessageAttachment[]
+
+  @@index([conversationId])
+  @@index([createdAt(sort: Desc)])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        Int      @id @default(autoincrement())
+  messageId Int      @map("message_id")
+  fileUrl   String   @map("file_url") @db.Text
+  fileName  String?  @map("file_name") @db.VarChar(255)
+  fileSize  Int?     @map("file_size")
+  mimeType  String?  @map("mime_type") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_attachments")
+}
