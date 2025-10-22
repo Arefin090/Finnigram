@@ -1,16 +1,18 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const logger = require('./utils/logger');
-const { initializeDatabase } = require('./utils/database');
-const { connectRedis } = require('./utils/redis');
-const conversationRoutes = require('./routes/conversations');
-const messageRoutes = require('./routes/messages');
-const errorHandler = require('./middleware/errorHandler');
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import { PrismaClient } from '@prisma/client';
+import logger from './utils/logger';
+import { connectRedis } from './utils/redis';
+import conversationRoutes from './routes/conversations';
+import messageRoutes from './routes/messages';
+import errorHandler from './middleware/errorHandler';
+import { HealthStatus, MetricsResponse } from './types';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
+const prisma = new PrismaClient();
 
 // Middleware
 app.use(helmet());
@@ -19,7 +21,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(morgan('combined', { 
-  stream: { write: message => logger.info(message.trim()) } 
+  stream: { write: (message: string) => logger.info(message.trim()) } 
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -30,45 +32,47 @@ app.use('/api/messages', messageRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
+  const healthStatus: HealthStatus = {
     status: 'healthy', 
     service: 'message-service',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: process.env.npm_package_version || '1.0.0'
-  });
+  };
+  
+  res.json(healthStatus);
 });
 
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
   try {
-    const { pool } = require('./utils/database');
     const { client: redisClient } = require('./utils/redis');
     
-    // Get database stats
-    const dbResult = await pool.query(`
-      SELECT 
-        (SELECT COUNT(*) FROM conversations) as total_conversations,
-        (SELECT COUNT(*) FROM messages WHERE deleted_at IS NULL) as total_messages,
-        (SELECT COUNT(*) FROM conversation_participants) as total_participants
-    `);
+    // Get database stats using Prisma
+    const [totalConversations, totalMessages, totalParticipants] = await Promise.all([
+      prisma.conversation.count(),
+      prisma.message.count({
+        where: { deletedAt: null }
+      }),
+      prisma.conversationParticipant.count()
+    ]);
     
-    const stats = dbResult.rows[0];
-    
-    res.json({
+    const metrics: MetricsResponse = {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       cpu: process.cpuUsage(),
       database: {
-        totalConversations: parseInt(stats.total_conversations),
-        totalMessages: parseInt(stats.total_messages),
-        totalParticipants: parseInt(stats.total_participants)
+        totalConversations,
+        totalMessages,
+        totalParticipants
       },
       redis: {
         connected: redisClient.isReady
       },
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    res.json(metrics);
   } catch (error) {
     logger.error('Error getting metrics:', error);
     res.status(500).json({ error: 'Failed to get metrics' });
@@ -88,21 +92,32 @@ app.use('*', (req, res) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
+const gracefulShutdown = async () => {
+  logger.info('Starting graceful shutdown...');
+  
+  try {
+    // Disconnect Prisma
+    await prisma.$disconnect();
+    logger.info('Prisma disconnected');
+    
+    // Other cleanup can go here
+    
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+};
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 // Start server
-const startServer = async () => {
+const startServer = async (): Promise<void> => {
   try {
-    // Initialize database
-    await initializeDatabase();
+    // Test Prisma connection
+    await prisma.$connect();
+    logger.info('Prisma connected successfully');
     
     // Connect to Redis
     await connectRedis();
@@ -119,4 +134,4 @@ const startServer = async () => {
 
 startServer();
 
-module.exports = app;
+export default app;

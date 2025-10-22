@@ -1,51 +1,53 @@
-const express = require('express');
-const Conversation = require('../models/Conversation');
-const { verifyToken } = require('../middleware/auth');
-const { getCachedUserConversations, cacheUserConversations } = require('../utils/redis');
-const logger = require('../utils/logger');
+import { Router, Request, Response, NextFunction } from 'express';
+import ConversationService from '../services/ConversationService';
+import { verifyToken } from '../middleware/auth';
+import { getCachedUserConversations, cacheUserConversations, publishMessage } from '../utils/redis';
+import logger from '../utils/logger';
+import { CreateConversationRequest, ApiResponse, User } from '../types';
+import { PrismaClient } from '@prisma/client';
 
-const router = express.Router();
+const router = Router();
+const conversationService = new ConversationService();
+const prisma = new PrismaClient();
 
 // Get user's conversations
-router.get('/', verifyToken, async (req, res, next) => {
+router.get('/', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = req.user.id;
     
-    const { pool } = require('../utils/database');
-    
-    // Get conversations with participant data
-    const conversationsResult = await pool.query(`
+    // Get conversations with participant data - matching original complex query
+    const conversationsResult = await prisma.$queryRaw<any[]>`
       SELECT c.*, cp.last_read_at
       FROM conversations c
       JOIN conversation_participants cp ON c.id = cp.conversation_id
-      WHERE cp.user_id = $1
+      WHERE cp.user_id = ${userId}
       ORDER BY c.created_at DESC
-    `, [userId]);
+    `;
     
     // For each conversation, get participant details and latest message
     const conversationsWithParticipants = await Promise.all(
-      conversationsResult.rows.map(async (conversation) => {
-        const participantsResult = await pool.query(`
+      conversationsResult.map(async (conversation) => {
+        const participantsResult = await prisma.$queryRaw<User[]>`
           SELECT u.id as user_id, u.username, u.display_name, u.email
           FROM users u
           JOIN conversation_participants cp ON u.id = cp.user_id
-          WHERE cp.conversation_id = $1
-        `, [conversation.id]);
+          WHERE cp.conversation_id = ${conversation.id}
+        `;
         
         // Get the latest message for preview
-        const latestMessageResult = await pool.query(`
+        const latestMessageResult = await prisma.$queryRaw<any[]>`
           SELECT content, created_at
           FROM messages
-          WHERE conversation_id = $1
+          WHERE conversation_id = ${conversation.id}
           ORDER BY created_at DESC
           LIMIT 1
-        `, [conversation.id]);
+        `;
         
-        const latestMessage = latestMessageResult.rows[0];
+        const latestMessage = latestMessageResult[0];
         
         return {
           ...conversation,
-          participants: participantsResult.rows,
+          participants: participantsResult,
           last_message: latestMessage?.content || null,
           last_message_at: latestMessage?.created_at || conversation.created_at
         };
@@ -54,54 +56,57 @@ router.get('/', verifyToken, async (req, res, next) => {
     
     // Sort conversations by last message time (most recent first)
     conversationsWithParticipants.sort((a, b) => 
-      new Date(b.last_message_at) - new Date(a.last_message_at)
+      new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
     );
     
     logger.info(`Fetched ${conversationsWithParticipants.length} conversations for user ${userId}`);
     res.json({ conversations: conversationsWithParticipants });
   } catch (error) {
     logger.error('Error in GET /conversations:', error);
-    res.status(500).json({ error: 'Database error', details: error.message });
+    res.status(500).json({ error: 'Database error', details: (error as Error).message });
   }
 });
 
 // Create new conversation
-router.post('/', verifyToken, async (req, res, next) => {
+router.post('/', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { type, name, description, participants = [] } = req.body;
+    const { type, name, description, participants = [] } = req.body as CreateConversationRequest;
     const createdBy = req.user.id;
     
     // Validation
     if (type === 'group' && !name) {
-      return res.status(400).json({ error: 'Group conversations require a name' });
+      res.status(400).json({ error: 'Group conversations require a name' });
+      return;
     }
     
     if (type === 'direct' && participants.length !== 1) {
-      return res.status(400).json({ error: 'Direct conversations require exactly one other participant' });
+      res.status(400).json({ error: 'Direct conversations require exactly one other participant' });
+      return;
     }
     
     // Check if direct conversation already exists
     if (type === 'direct') {
-      const existingConversation = await checkExistingDirectConversation(createdBy, participants[0]);
+      const existingConversation = await conversationService.findExistingDirectConversation(createdBy, participants[0]);
       if (existingConversation) {
         // Get the existing conversation with participant data
-        const participantsResult = await pool.query(`
+        const participantsResult = await prisma.$queryRaw<User[]>`
           SELECT u.id as user_id, u.username, u.display_name, u.email
           FROM users u
           JOIN conversation_participants cp ON u.id = cp.user_id
-          WHERE cp.conversation_id = $1
-        `, [existingConversation.id]);
+          WHERE cp.conversation_id = ${existingConversation.id}
+        `;
         
         const conversationWithParticipants = {
           ...existingConversation,
-          participants: participantsResult.rows
+          participants: participantsResult
         };
         
-        return res.json({ conversation: conversationWithParticipants });
+        res.json({ conversation: conversationWithParticipants });
+        return;
       }
     }
     
-    const conversation = await Conversation.create({
+    const conversation = await conversationService.create({
       type,
       name,
       description,
@@ -110,22 +115,20 @@ router.post('/', verifyToken, async (req, res, next) => {
     });
     
     // Get the conversation with participant data for real-time sync
-    const { pool } = require('../utils/database');
-    const participantsResult = await pool.query(`
+    const participantsResult = await prisma.$queryRaw<User[]>`
       SELECT u.id as user_id, u.username, u.display_name, u.email
       FROM users u
       JOIN conversation_participants cp ON u.id = cp.user_id
-      WHERE cp.conversation_id = $1
-    `, [conversation.id]);
+      WHERE cp.conversation_id = ${conversation.id}
+    `;
     
     const conversationWithParticipants = {
       ...conversation,
-      participants: participantsResult.rows
+      participants: participantsResult
     };
     
     // Broadcast to all participants via Redis
     try {
-      const { publishMessage } = require('../utils/redis');
       const allParticipants = [...participants, createdBy];
       
       for (const participantId of allParticipants) {
@@ -145,30 +148,32 @@ router.post('/', verifyToken, async (req, res, next) => {
     res.status(201).json({
       message: 'Conversation created successfully',
       conversation: conversationWithParticipants
-    });
+    } as ApiResponse);
   } catch (error) {
     next(error);
   }
 });
 
 // Get conversation details
-router.get('/:id', verifyToken, async (req, res, next) => {
+router.get('/:id', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     
     // Check if user is participant
-    const isParticipant = await Conversation.isParticipant(id, userId);
+    const isParticipant = await conversationService.isParticipant(parseInt(id), userId);
     if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
     
-    const conversation = await Conversation.findById(id);
+    const conversation = await conversationService.findById(parseInt(id));
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
     }
     
-    const participants = await Conversation.getParticipants(id);
+    const participants = await conversationService.getParticipants(parseInt(id));
     
     res.json({
       conversation: {
@@ -182,103 +187,90 @@ router.get('/:id', verifyToken, async (req, res, next) => {
 });
 
 // Add participant to conversation
-router.post('/:id/participants', verifyToken, async (req, res, next) => {
+router.post('/:id/participants', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const { userId: newUserId } = req.body;
     const currentUserId = req.user.id;
     
     // Check if current user is participant and has permission
-    const isParticipant = await Conversation.isParticipant(id, currentUserId);
+    const isParticipant = await conversationService.isParticipant(parseInt(id), currentUserId);
     if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
     
     // Check if conversation exists and is a group
-    const conversation = await Conversation.findById(id);
+    const conversation = await conversationService.findById(parseInt(id));
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
     }
     
     if (conversation.type === 'direct') {
-      return res.status(400).json({ error: 'Cannot add participants to direct conversations' });
+      res.status(400).json({ error: 'Cannot add participants to direct conversations' });
+      return;
     }
     
-    await Conversation.addParticipant(id, newUserId);
+    await conversationService.addParticipant(parseInt(id), newUserId);
     
     logger.info(`User ${newUserId} added to conversation ${id} by ${currentUserId}`);
     
-    res.json({ message: 'Participant added successfully' });
+    res.json({ message: 'Participant added successfully' } as ApiResponse);
   } catch (error) {
     next(error);
   }
 });
 
 // Remove participant from conversation
-router.delete('/:id/participants/:userId', verifyToken, async (req, res, next) => {
+router.delete('/:id/participants/:userId', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id, userId: targetUserId } = req.params;
     const currentUserId = req.user.id;
     
     // Check if current user is participant
-    const isParticipant = await Conversation.isParticipant(id, currentUserId);
+    const isParticipant = await conversationService.isParticipant(parseInt(id), currentUserId);
     if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
     
     // Users can remove themselves, or admins can remove others
     if (currentUserId !== parseInt(targetUserId)) {
       // Check if current user is admin (simplified - in real app, check role)
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      res.status(403).json({ error: 'Insufficient permissions' });
+      return;
     }
     
-    await Conversation.removeParticipant(id, targetUserId);
+    await conversationService.removeParticipant(parseInt(id), parseInt(targetUserId));
     
     logger.info(`User ${targetUserId} removed from conversation ${id}`);
     
-    res.json({ message: 'Participant removed successfully' });
+    res.json({ message: 'Participant removed successfully' } as ApiResponse);
   } catch (error) {
     next(error);
   }
 });
 
 // Mark conversation as read
-router.patch('/:id/read', verifyToken, async (req, res, next) => {
+router.patch('/:id/read', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
     
     // Check if user is participant
-    const isParticipant = await Conversation.isParticipant(id, userId);
+    const isParticipant = await conversationService.isParticipant(parseInt(id), userId);
     if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
     
-    await Conversation.updateLastRead(id, userId);
+    await conversationService.updateLastRead(parseInt(id), userId);
     
-    res.json({ message: 'Conversation marked as read' });
+    res.json({ message: 'Conversation marked as read' } as ApiResponse);
   } catch (error) {
     next(error);
   }
 });
 
-// Helper function to check existing direct conversation
-async function checkExistingDirectConversation(user1Id, user2Id) {
-  try {
-    const { pool } = require('../utils/database');
-    const result = await pool.query(`
-      SELECT c.* FROM conversations c
-      WHERE c.type = 'direct'
-        AND EXISTS (SELECT 1 FROM conversation_participants cp1 WHERE cp1.conversation_id = c.id AND cp1.user_id = $1)
-        AND EXISTS (SELECT 1 FROM conversation_participants cp2 WHERE cp2.conversation_id = c.id AND cp2.user_id = $2)
-      LIMIT 1
-    `, [user1Id, user2Id]);
-    
-    return result.rows[0] || null;
-  } catch (error) {
-    logger.error('Error checking existing direct conversation:', error);
-    return null;
-  }
-}
-
-module.exports = router;
+export default router;

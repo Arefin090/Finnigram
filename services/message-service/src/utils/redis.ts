@@ -1,7 +1,8 @@
-const redis = require('redis');
-const logger = require('./logger');
+import { createClient, RedisClientType } from 'redis';
+import logger from './logger';
+import { PrismaClient } from '@prisma/client';
 
-const client = redis.createClient({
+const client: RedisClientType = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
@@ -9,11 +10,11 @@ client.on('connect', () => {
   logger.info('Redis connected successfully');
 });
 
-client.on('error', (err) => {
+client.on('error', (err: Error) => {
   logger.error('Redis connection error:', err);
 });
 
-const connectRedis = async () => {
+export const connectRedis = async (): Promise<void> => {
   try {
     await client.connect();
     logger.info('Redis client connected');
@@ -24,7 +25,7 @@ const connectRedis = async () => {
 };
 
 // Cache message counts and recent messages
-const cacheConversationData = async (conversationId, data) => {
+export const cacheConversationData = async (conversationId: number, data: any): Promise<void> => {
   try {
     await client.setEx(`conversation:${conversationId}`, 300, JSON.stringify(data));
   } catch (error) {
@@ -32,7 +33,7 @@ const cacheConversationData = async (conversationId, data) => {
   }
 };
 
-const getCachedConversationData = async (conversationId) => {
+export const getCachedConversationData = async (conversationId: number): Promise<any | null> => {
   try {
     const data = await client.get(`conversation:${conversationId}`);
     return data ? JSON.parse(data) : null;
@@ -43,7 +44,7 @@ const getCachedConversationData = async (conversationId) => {
 };
 
 // Cache user's conversation list
-const cacheUserConversations = async (userId, conversations) => {
+export const cacheUserConversations = async (userId: number, conversations: any): Promise<void> => {
   try {
     await client.setEx(`user:${userId}:conversations`, 300, JSON.stringify(conversations));
   } catch (error) {
@@ -51,7 +52,7 @@ const cacheUserConversations = async (userId, conversations) => {
   }
 };
 
-const getCachedUserConversations = async (userId) => {
+export const getCachedUserConversations = async (userId: number): Promise<any | null> => {
   try {
     const data = await client.get(`user:${userId}:conversations`);
     return data ? JSON.parse(data) : null;
@@ -62,29 +63,31 @@ const getCachedUserConversations = async (userId) => {
 };
 
 // Invalidate cache when new messages arrive
-const invalidateConversationCache = async (conversationId) => {
+export const invalidateConversationCache = async (conversationId: number): Promise<void> => {
   try {
     await client.del(`conversation:${conversationId}`);
     
     // Also invalidate user conversation lists for all participants
-    const { pool } = require('./database');
-    const result = await pool.query(
-      'SELECT user_id FROM conversation_participants WHERE conversation_id = $1',
-      [conversationId]
-    );
+    // We'll need to get prisma instance from the service layer for this
+    const prisma = new PrismaClient();
+    const participants = await prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      select: { userId: true }
+    });
     
-    const promises = result.rows.map(row => 
-      client.del(`user:${row.user_id}:conversations`)
+    const promises = participants.map(participant => 
+      client.del(`user:${participant.userId}:conversations`)
     );
     
     await Promise.all(promises);
+    await prisma.$disconnect();
   } catch (error) {
     logger.error('Error invalidating conversation cache:', error);
   }
 };
 
 // Publish message events for real-time service
-const publishMessage = async (event, data) => {
+export const publishMessage = async (event: string, data: any): Promise<void> => {
   try {
     await client.publish(event, JSON.stringify(data));
     logger.info(`Published message event: ${event}`);
@@ -93,13 +96,4 @@ const publishMessage = async (event, data) => {
   }
 };
 
-module.exports = {
-  client,
-  connectRedis,
-  cacheConversationData,
-  getCachedConversationData,
-  cacheUserConversations,
-  getCachedUserConversations,
-  invalidateConversationCache,
-  publishMessage
-};
+export { client };
