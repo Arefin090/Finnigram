@@ -1,6 +1,8 @@
-const logger = require('../utils/logger');
+import { Request, Response, NextFunction } from 'express';
+import logger from '../utils/logger';
+import { ValidationError, DatabaseError } from '../types';
 
-const errorHandler = (error, req, res, next) => {
+const errorHandler = (error: Error & DatabaseError & ValidationError, req: Request, res: Response, next: NextFunction): Response => {
   logger.error('Error occurred:', {
     error: error.message,
     stack: error.stack,
@@ -29,9 +31,9 @@ const errorHandler = (error, req, res, next) => {
     return res.status(400).json({ error: 'Constraint violation' });
   }
 
-  res.status(500).json({
+  return res.status(500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
   });
 };
 
-module.exports = errorHandler;
+export default errorHandler;
