@@ -27,5 +27,8 @@
     "react-native-web": "^0.21.0",
     "socket.io-client": "^4.7.4"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/react": "~19.1.10"
+  }
 }
