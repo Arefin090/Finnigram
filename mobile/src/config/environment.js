@@ -6,9 +6,9 @@ const config = {
     REALTIME_SERVICE_URL: 'http://localhost:3003',
   },
   production: {
-    USER_SERVICE_URL: 'https://finnigram-user-service.onrender.com/api',
-    MESSAGE_SERVICE_URL: 'https://finnigram-message-service.onrender.com/api',
-    REALTIME_SERVICE_URL: 'https://finnigram-realtime-service.onrender.com',
+    USER_SERVICE_URL: 'https://finnigramuser-service-production.up.railway.app/api',
+    MESSAGE_SERVICE_URL: 'https://finnigrammessage-service-production.up.railway.app/api',
+    REALTIME_SERVICE_URL: 'https://finnigramrealtime-service-production.up.railway.app',
   }
 };
 
