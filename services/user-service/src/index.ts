@@ -91,9 +91,15 @@ const gracefulShutdown = async (): Promise<void> => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+console.log('🚀 User Service process starting...');
+console.log(`Node version: ${process.version}`);
+console.log(`Platform: ${process.platform}`);
+console.log(`Architecture: ${process.arch}`);
+
 // Start server
 const startServer = async (): Promise<void> => {
   try {
+    console.log('📝 Initializing logger...');
     logger.info('Starting User Service...');
     logger.info(`DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
     logger.info(`JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`);
@@ -103,7 +109,7 @@ const startServer = async (): Promise<void> => {
     await initializeDatabase();
     logger.info('Database initialized successfully');
     
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       logger.info(`User Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
