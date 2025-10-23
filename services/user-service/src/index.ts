@@ -91,32 +91,28 @@ const gracefulShutdown = async (): Promise<void> => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-console.log('🚀 User Service process starting...');
-console.log(`Node version: ${process.version}`);
-console.log(`Platform: ${process.platform}`);
-console.log(`Architecture: ${process.arch}`);
-
 // Start server
 const startServer = async (): Promise<void> => {
   try {
-    console.log('📝 Initializing logger...');
     logger.info('Starting User Service...');
     logger.info(`DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
     logger.info(`JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`);
     logger.info(`PORT: ${PORT}`);
     
     // Initialize database first (like message-service)
-    console.log('🔌 About to initialize database...');
     await initializeDatabase();
-    console.log('✅ Database initialized successfully');
     logger.info('Database initialized successfully');
     
-    console.log('🌐 About to start HTTP server...');
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🎉 Server listening on port ${PORT}`);
+    const server = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`User Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
+    
+    // Add periodic health logging
+    setInterval(() => {
+      logger.info(`Service health check - uptime: ${process.uptime()}s`);
+    }, 30000);
+    
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
