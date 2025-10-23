@@ -89,31 +89,38 @@ process.on('SIGINT', gracefulShutdown);
 // Start server
 const startServer = async (): Promise<void> => {
   try {
-    logger.info('Starting User Service...');
-    logger.info(`DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
-    logger.info(`PORT: ${PORT}`);
+    console.log('🚀 Starting User Service...');
+    console.log(`DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
+    console.log(`JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`);
+    console.log(`PORT: ${PORT}`);
     
-    // Initialize database with retry logic
-    let retries = 5;
+    // Start HTTP server first (so Railway sees it's "up")
+    const server = app.listen(PORT, () => {
+      console.log(`✅ User Service running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+    
+    // Initialize database in background (non-blocking)
+    console.log('🔄 Connecting to database...');
+    let retries = 3;
     while (retries > 0) {
       try {
         await initializeDatabase();
-        logger.info('Database initialized successfully');
+        console.log('✅ Database initialized successfully');
         break;
       } catch (error) {
         retries--;
-        logger.warn(`Database initialization failed, retries left: ${retries}`, error);
-        if (retries === 0) throw error;
+        console.warn(`⚠️  Database initialization failed, retries left: ${retries}`, error);
+        if (retries === 0) {
+          console.error('❌ Database connection failed after all retries');
+          // Don't kill the server, just log the error
+        }
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     
-    app.listen(PORT, () => {
-      logger.info(`User Service running on port ${PORT}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
   } catch (error) {
-    logger.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
