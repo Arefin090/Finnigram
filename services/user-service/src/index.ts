@@ -106,10 +106,14 @@ const startServer = async (): Promise<void> => {
     logger.info(`PORT: ${PORT}`);
     
     // Initialize database first (like message-service)
+    console.log('🔌 About to initialize database...');
     await initializeDatabase();
+    console.log('✅ Database initialized successfully');
     logger.info('Database initialized successfully');
     
+    console.log('🌐 About to start HTTP server...');
     app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🎉 Server listening on port ${PORT}`);
       logger.info(`User Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });

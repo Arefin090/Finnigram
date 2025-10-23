@@ -48,10 +48,13 @@ prisma.$on('warn', (e) => {
 
 const initializeDatabase = async (): Promise<void> => {
   try {
+    console.log('🔄 Attempting Prisma connection...');
     // Test the connection
     await prisma.$connect();
+    console.log('🎯 Prisma connected successfully');
     logger.info('Database connected successfully');
   } catch (error) {
+    console.error('❌ Database connection failed:', error);
     logger.error('Database connection failed:', error);
     throw error;
   }
