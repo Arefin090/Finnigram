@@ -1,21 +1,26 @@
-const Joi = require('joi');
+import Joi from 'joi';
+import { Request, Response, NextFunction } from 'express';
+import { ValidationError } from '../types';
 
-const validateRequest = (schema) => {
-  return (req, res, next) => {
+export const validateRequest = (schema: Joi.ObjectSchema) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     const { error } = schema.validate(req.body);
     
     if (error) {
-      return res.status(400).json({
+      const validationError: ValidationError = {
         error: 'Validation failed',
         details: error.details.map(detail => detail.message)
-      });
+      };
+      
+      res.status(400).json(validationError);
+      return;
     }
     
     next();
   };
 };
 
-const registerSchema = Joi.object({
+export const registerSchema = Joi.object({
   email: Joi.string()
     .email()
     .required()
@@ -56,7 +61,7 @@ const registerSchema = Joi.object({
     })
 });
 
-const loginSchema = Joi.object({
+export const loginSchema = Joi.object({
   email: Joi.string()
     .email()
     .required()
@@ -71,9 +76,3 @@ const loginSchema = Joi.object({
       'any.required': 'Password is required'
     })
 });
-
-module.exports = {
-  validateRequest,
-  registerSchema,
-  loginSchema
-};
