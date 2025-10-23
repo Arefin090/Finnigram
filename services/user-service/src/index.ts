@@ -10,7 +10,7 @@ import errorHandler from './middleware/errorHandler';
 import { HealthStatus, MetricsResponse } from './types';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Middleware
 app.use(helmet());
