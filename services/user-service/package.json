@@ -9,6 +9,7 @@
     "build": "prisma generate && tsc",
     "test": "jest",
     "lint": "eslint src/",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -24,8 +25,7 @@
     "morgan": "^1.10.0",
     "winston": "^3.11.0",
     "@prisma/client": "^5.6.0",
-    "typescript": "^5.3.0",
-    "prisma": "^5.6.0"
+    "typescript": "^5.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
@@ -41,6 +41,7 @@
     "@types/jest": "^29.5.8",
     "ts-node": "^10.9.1",
     "ts-node-dev": "^2.0.0",
+    "prisma": "^5.6.0",
     "tsconfig-paths": "^4.2.0"
   }
 }
