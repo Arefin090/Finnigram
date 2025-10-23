@@ -67,7 +67,7 @@ const errorHandler = (error: ErrorWithCode, req: Request, res: Response, next: N
 
   // Default server error
   const apiError: ApiError = {
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+    error: error.message
   };
   
   res.status(500).json(apiError);
