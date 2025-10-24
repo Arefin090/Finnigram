@@ -15,7 +15,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:19006'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:19006', 'http://localhost:8081'],
   credentials: true
 }));
 app.use(morgan('combined', { 
