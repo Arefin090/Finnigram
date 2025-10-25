@@ -7,8 +7,8 @@ const config = {
   },
   production: {
     USER_SERVICE_URL: 'https://finnigramuser-service-production-139b.up.railway.app/api',
-    MESSAGE_SERVICE_URL: 'https://finnigrammessage-service-production.up.railway.app/api',
-    REALTIME_SERVICE_URL: 'https://finnigramrealtime-service-production.up.railway.app',
+    MESSAGE_SERVICE_URL: 'https://finnigrammessage-service-production-bbe0.up.railway.app/api',
+    REALTIME_SERVICE_URL: 'https://finnigramrealtime-service-production-bd5c.up.railway.app',
   }
 };
 

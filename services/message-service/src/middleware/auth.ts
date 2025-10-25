@@ -35,6 +35,6 @@ export const verifyToken = async (req: Request, res: Response, next: NextFunctio
     }
     
     logger.error('Token verification error:', error);
-    return res.status(500).json({ error: 'Authentication failed' });
+    return res.status(500).json({ error: `Error testing ${error}` });
   }
 };
