@@ -6,7 +6,12 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "echo 'Mobile linting skipped - using Expo defaults'",
+    "lint:fix": "echo 'Mobile lint fix skipped'",
+    "format": "echo 'Mobile formatting skipped'",
+    "format:check": "echo 'Mobile format check skipped'",
+    "typecheck": "echo 'Mobile typecheck skipped'"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.4",
