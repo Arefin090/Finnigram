@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { PrismaClient } from '@prisma/client';
 import logger from './utils/logger';
-import { connectRedis } from './utils/redis';
+import { connectRedis, client as redisClient } from './utils/redis';
 import conversationRoutes from './routes/conversations';
 import messageRoutes from './routes/messages';
 import errorHandler from './middleware/errorHandler';
@@ -16,13 +16,20 @@ const prisma = new PrismaClient();
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:19006'],
-  credentials: true
-}));
-app.use(morgan('combined', { 
-  stream: { write: (message: string) => logger.info(message.trim()) } 
-}));
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+      'http://localhost:3000',
+      'http://localhost:19006',
+    ],
+    credentials: true,
+  })
+);
+app.use(
+  morgan('combined', {
+    stream: { write: (message: string) => logger.info(message.trim()) },
+  })
+);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,30 +40,29 @@ app.use('/api/messages', messageRoutes);
 // Health check endpoint
 app.get('/health', (req, res) => {
   const healthStatus: HealthStatus = {
-    status: 'healthy', 
+    status: 'healthy',
     service: 'message-service',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0'
+    version: process.env.npm_package_version || '1.0.0',
   };
-  
+
   res.json(healthStatus);
 });
 
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
   try {
-    const { client: redisClient } = require('./utils/redis');
-    
     // Get database stats using Prisma
-    const [totalConversations, totalMessages, totalParticipants] = await Promise.all([
-      prisma.conversation.count(),
-      prisma.message.count({
-        where: { deletedAt: null }
-      }),
-      prisma.conversationParticipant.count()
-    ]);
-    
+    const [totalConversations, totalMessages, totalParticipants] =
+      await Promise.all([
+        prisma.conversation.count(),
+        prisma.message.count({
+          where: { deletedAt: null },
+        }),
+        prisma.conversationParticipant.count(),
+      ]);
+
     const metrics: MetricsResponse = {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
@@ -64,14 +70,14 @@ app.get('/metrics', async (req, res) => {
       database: {
         totalConversations,
         totalMessages,
-        totalParticipants
+        totalParticipants,
       },
       redis: {
-        connected: redisClient.isReady
+        connected: redisClient.isReady,
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-    
+
     res.json(metrics);
   } catch (error) {
     logger.error('Error getting metrics:', error);
@@ -84,24 +90,24 @@ app.use(errorHandler);
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Route not found',
     path: req.originalUrl,
-    method: req.method 
+    method: req.method,
   });
 });
 
 // Graceful shutdown
 const gracefulShutdown = async () => {
   logger.info('Starting graceful shutdown...');
-  
+
   try {
     // Disconnect Prisma
     await prisma.$disconnect();
     logger.info('Prisma disconnected');
-    
+
     // Other cleanup can go here
-    
+
     process.exit(0);
   } catch (error) {
     logger.error('Error during graceful shutdown:', error);
@@ -118,10 +124,10 @@ const startServer = async (): Promise<void> => {
     // Test Prisma connection
     await prisma.$connect();
     logger.info('Prisma connected successfully');
-    
+
     // Connect to Redis
     await connectRedis();
-    
+
     app.listen(PORT, () => {
       logger.info(`Message Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);

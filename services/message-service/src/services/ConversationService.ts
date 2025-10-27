@@ -1,6 +1,10 @@
 import { PrismaClient, Conversation } from '@prisma/client';
 import logger from '../utils/logger';
-import { CreateConversationParams, ConversationParticipant, ConversationWithParticipants, User } from '../types';
+import {
+  CreateConversationParams,
+  ConversationParticipant,
+  ConversationWithParticipants,
+} from '../types';
 
 class ConversationService {
   private prisma: PrismaClient;
@@ -10,29 +14,35 @@ class ConversationService {
   }
 
   async create(params: CreateConversationParams): Promise<Conversation> {
-    const { type = 'direct', name, description, createdBy, participants = [] } = params;
-    
+    const {
+      type = 'direct',
+      name,
+      description,
+      createdBy,
+      participants = [],
+    } = params;
+
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async tx => {
         // Create conversation
         const conversation = await tx.conversation.create({
           data: {
-            type: type as any,
+            type,
             name,
             description,
-            createdBy
-          }
+            createdBy,
+          },
         });
-        
+
         // Add creator as admin
         await tx.conversationParticipant.create({
           data: {
             conversationId: conversation.id,
             userId: createdBy,
-            role: 'admin'
-          }
+            role: 'admin',
+          },
         });
-        
+
         // Add other participants
         for (const userId of participants) {
           if (userId !== createdBy) {
@@ -40,15 +50,15 @@ class ConversationService {
               data: {
                 conversationId: conversation.id,
                 userId,
-                role: 'member'
-              }
+                role: 'member',
+              },
             });
           }
         }
-        
+
         return conversation;
       });
-      
+
       logger.info(`Conversation created: ${result.id}`);
       return result;
     } catch (error) {
@@ -60,7 +70,7 @@ class ConversationService {
   async findById(id: number): Promise<Conversation | null> {
     try {
       const conversation = await this.prisma.conversation.findUnique({
-        where: { id }
+        where: { id },
       });
       return conversation;
     } catch (error) {
@@ -69,11 +79,28 @@ class ConversationService {
     }
   }
 
-  async getUserConversations(userId: number): Promise<any[]> {
+  async getUserConversations(
+    userId: number
+  ): Promise<ConversationWithParticipants[]> {
     try {
       // This is a complex query that matches the original implementation
       // We need to get conversations with unread counts and last message info
-      const conversations = await this.prisma.$queryRaw<any[]>`
+      const conversations = await this.prisma.$queryRaw<
+        Array<{
+          id: number;
+          type: string;
+          name: string | null;
+          description: string | null;
+          avatar_url: string | null;
+          created_by: number;
+          created_at: Date;
+          updated_at: Date;
+          last_read_at: Date | null;
+          unread_count: bigint;
+          last_message_content: string | null;
+          last_message_created_at: Date | null;
+        }>
+      >`
         SELECT 
           c.*,
           cp.last_read_at,
@@ -85,7 +112,7 @@ class ConversationService {
         WHERE cp.user_id = ${userId}
         ORDER BY COALESCE(last_message_at, c.created_at) DESC
       `;
-      
+
       return conversations;
     } catch (error) {
       logger.error('Error getting user conversations:', error);
@@ -93,7 +120,9 @@ class ConversationService {
     }
   }
 
-  async getParticipants(conversationId: number): Promise<ConversationParticipant[]> {
+  async getParticipants(
+    conversationId: number
+  ): Promise<ConversationParticipant[]> {
     try {
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId },
@@ -101,16 +130,16 @@ class ConversationService {
           userId: true,
           role: true,
           joinedAt: true,
-          lastReadAt: true
-        }
+          lastReadAt: true,
+        },
       });
-      
+
       // Transform to match original format
       return participants.map(p => ({
         user_id: p.userId,
         role: p.role,
         joined_at: p.joinedAt,
-        last_read_at: p.lastReadAt
+        last_read_at: p.lastReadAt,
       }));
     } catch (error) {
       logger.error('Error getting conversation participants:', error);
@@ -118,23 +147,27 @@ class ConversationService {
     }
   }
 
-  async addParticipant(conversationId: number, userId: number, role: string = 'member'): Promise<void> {
+  async addParticipant(
+    conversationId: number,
+    userId: number,
+    role: string = 'member'
+  ): Promise<void> {
     try {
       await this.prisma.conversationParticipant.upsert({
         where: {
           conversationId_userId: {
             conversationId,
-            userId
-          }
+            userId,
+          },
         },
         update: {},
         create: {
           conversationId,
           userId,
-          role: role as any
-        }
+          role,
+        },
       });
-      
+
       logger.info(`User ${userId} added to conversation ${conversationId}`);
     } catch (error) {
       logger.error('Error adding participant:', error);
@@ -142,17 +175,20 @@ class ConversationService {
     }
   }
 
-  async removeParticipant(conversationId: number, userId: number): Promise<void> {
+  async removeParticipant(
+    conversationId: number,
+    userId: number
+  ): Promise<void> {
     try {
       await this.prisma.conversationParticipant.delete({
         where: {
           conversationId_userId: {
             conversationId,
-            userId
-          }
-        }
+            userId,
+          },
+        },
       });
-      
+
       logger.info(`User ${userId} removed from conversation ${conversationId}`);
     } catch (error) {
       logger.error('Error removing participant:', error);
@@ -166,12 +202,12 @@ class ConversationService {
         where: {
           conversationId_userId: {
             conversationId,
-            userId
-          }
+            userId,
+          },
         },
         data: {
-          lastReadAt: new Date()
-        }
+          lastReadAt: new Date(),
+        },
       });
     } catch (error) {
       logger.error('Error updating last read:', error);
@@ -179,15 +215,18 @@ class ConversationService {
     }
   }
 
-  async isParticipant(conversationId: number, userId: number): Promise<boolean> {
+  async isParticipant(
+    conversationId: number,
+    userId: number
+  ): Promise<boolean> {
     try {
       const participant = await this.prisma.conversationParticipant.findUnique({
         where: {
           conversationId_userId: {
             conversationId,
-            userId
-          }
-        }
+            userId,
+          },
+        },
       });
       return participant !== null;
     } catch (error) {
@@ -197,32 +236,40 @@ class ConversationService {
   }
 
   // Helper method for checking existing direct conversation (used in routes)
-  async findExistingDirectConversation(user1Id: number, user2Id: number): Promise<Conversation | null> {
+  async findExistingDirectConversation(
+    user1Id: number,
+    user2Id: number
+  ): Promise<Conversation | null> {
     try {
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           type: 'direct',
           participants: {
             every: {
-              userId: { in: [user1Id, user2Id] }
-            }
-          }
+              userId: { in: [user1Id, user2Id] },
+            },
+          },
         },
         include: {
           participants: {
             where: {
-              userId: { in: [user1Id, user2Id] }
-            }
-          }
-        }
+              userId: { in: [user1Id, user2Id] },
+            },
+          },
+        },
       });
 
       // Ensure we have exactly 2 participants and they match our users
       if (conversation && conversation.participants.length === 2) {
-        const participantIds = conversation.participants.map(p => p.userId).sort();
+        const participantIds = conversation.participants
+          .map(p => p.userId)
+          .sort();
         const userIds = [user1Id, user2Id].sort();
-        
-        if (participantIds[0] === userIds[0] && participantIds[1] === userIds[1]) {
+
+        if (
+          participantIds[0] === userIds[0] &&
+          participantIds[1] === userIds[1]
+        ) {
           return conversation;
         }
       }
@@ -235,49 +282,53 @@ class ConversationService {
   }
 
   // Method to get conversations with participant details (used in routes)
-  async getConversationsWithParticipants(userId: number): Promise<ConversationWithParticipants[]> {
+  async getConversationsWithParticipants(
+    userId: number
+  ): Promise<ConversationWithParticipants[]> {
     try {
       const conversations = await this.prisma.conversation.findMany({
         where: {
           participants: {
             some: {
-              userId
-            }
-          }
+              userId,
+            },
+          },
         },
         include: {
           participants: {
             select: {
               userId: true,
-              lastReadAt: true
-            }
-          }
+              lastReadAt: true,
+            },
+          },
         },
         orderBy: {
-          createdAt: 'desc'
-        }
+          createdAt: 'desc',
+        },
       });
 
       // We'll need to fetch user details separately since we don't have User table in this service
       // This matches the original implementation where user details are fetched via separate queries
       const result: ConversationWithParticipants[] = [];
-      
+
       for (const conversation of conversations) {
         // Get the latest message for preview
         const latestMessage = await this.prisma.message.findFirst({
           where: {
-            conversationId: conversation.id
+            conversationId: conversation.id,
           },
           orderBy: {
-            createdAt: 'desc'
+            createdAt: 'desc',
           },
           select: {
             content: true,
-            createdAt: true
-          }
+            createdAt: true,
+          },
         });
 
-        const userParticipant = conversation.participants.find(p => p.userId === userId);
+        const userParticipant = conversation.participants.find(
+          p => p.userId === userId
+        );
 
         result.push({
           id: conversation.id,
@@ -291,13 +342,15 @@ class ConversationService {
           participants: [], // Will be populated by route handler with user service data
           last_message: latestMessage?.content || null,
           last_message_at: latestMessage?.createdAt || conversation.createdAt,
-          last_read_at: userParticipant?.lastReadAt || null
+          last_read_at: userParticipant?.lastReadAt || null,
         });
       }
 
       // Sort by last message time (most recent first)
-      result.sort((a, b) => 
-        new Date(b.last_message_at!).getTime() - new Date(a.last_message_at!).getTime()
+      result.sort(
+        (a, b) =>
+          new Date(b.last_message_at || 0).getTime() -
+          new Date(a.last_message_at || 0).getTime()
       );
 
       return result;
