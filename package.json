@@ -19,14 +19,38 @@
     "build:services": "npm run build --workspace=services/user-service --workspace=services/message-service --workspace=services/realtime-service --workspace=services/api-gateway",
     "build:mobile": "npm run build --workspace=mobile",
     "test": "npm run test --workspaces",
+    "test:coverage": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "format": "npm run format --workspaces",
+    "format:check": "npm run format:check --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down"
+    "docker:down": "docker-compose down",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "concurrently": "^8.2.2",
-    "nodemon": "^3.0.2"
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.6.2"
+  },
+  "lint-staged": {
+    "services/*/src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "mobile/src/**/*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   },
   "engines": {
     "node": ">=18.0.0",
