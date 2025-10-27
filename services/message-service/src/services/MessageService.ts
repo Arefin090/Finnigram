@@ -253,7 +253,21 @@ class MessageService {
     query: string,
     limit: number = 20
   ): Promise<
-    Array<MessageWithAttachments & { conversation_name: string | null }>
+    Array<{
+      id: number;
+      conversationId: number;
+      senderId: number;
+      content: string;
+      messageType: string;
+      replyTo: number | null;
+      status: string;
+      deliveredAt: Date | null;
+      readAt: Date | null;
+      editedAt: Date | null;
+      deletedAt: Date | null;
+      createdAt: Date;
+      conversation_name: string | null;
+    }>
   > {
     try {
       const messages = await this.prisma.message.findMany({

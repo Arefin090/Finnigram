@@ -79,9 +79,22 @@ class ConversationService {
     }
   }
 
-  async getUserConversations(
-    userId: number
-  ): Promise<ConversationWithParticipants[]> {
+  async getUserConversations(userId: number): Promise<
+    Array<{
+      id: number;
+      type: string;
+      name: string | null;
+      description: string | null;
+      avatar_url: string | null;
+      created_by: number;
+      created_at: Date;
+      updated_at: Date;
+      last_read_at: Date | null;
+      unread_count: bigint;
+      last_message_content: string | null;
+      last_message_created_at: Date | null;
+    }>
+  > {
     try {
       // This is a complex query that matches the original implementation
       // We need to get conversations with unread counts and last message info
