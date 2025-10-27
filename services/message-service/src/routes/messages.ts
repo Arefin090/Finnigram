@@ -117,8 +117,15 @@ router.post(
       // Get the complete message with attachments
       const completeMessage = await messageService.findById(message.id);
 
+      if (!completeMessage) {
+        throw new Error('Failed to retrieve created message');
+      }
+
       // Publish message event for real-time service
-      await publishMessage('new_message', completeMessage);
+      await publishMessage(
+        'new_message',
+        completeMessage as unknown as Record<string, unknown>
+      );
 
       res.status(201).json({
         message: 'Message sent successfully',
