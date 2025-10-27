@@ -1,44 +1,55 @@
 import { Server } from 'socket.io';
 import logger from '../utils/logger';
-import { setUserOnline, setUserOffline, getOnlineUsers, setUserStoppedTyping } from '../utils/redis';
+import {
+  setUserOnline,
+  setUserOffline,
+  getOnlineUsers,
+  setUserStoppedTyping,
+} from '../utils/redis';
 import { AuthenticatedSocket } from '../types';
 
-const handleConnectionEvents = (io: Server, socket: AuthenticatedSocket): void => {
-  
+const handleConnectionEvents = (
+  io: Server,
+  socket: AuthenticatedSocket
+): void => {
   // Handle initial connection
   socket.on('connect', async () => {
-    logger.info(`User ${socket.user.username} connected with socket ${socket.id}`);
+    logger.info(
+      `User ${socket.user.username} connected with socket ${socket.id}`
+    );
   });
 
   // Handle user coming online
   socket.on('user_online', async () => {
     await setUserOnline(socket.userId, socket.id);
-    
+
     // Send current online users to the newly connected user
     const onlineUsers = await getOnlineUsers();
     socket.emit('online_users', onlineUsers);
-    
+
     logger.info(`User ${socket.userId} is now online`);
   });
 
   // Handle disconnection
   socket.on('disconnect', async (reason: string) => {
     logger.info(`User ${socket.user.username} disconnected: ${reason}`);
-    
+
     // Set user offline
     await setUserOffline(socket.userId);
-    
+
     // Stop typing in current conversation if any
     if (socket.currentConversation) {
       await setUserStoppedTyping(socket.userId, socket.currentConversation);
-      
+
       // Notify other users in the conversation
-      socket.to(`conversation_${socket.currentConversation}`).emit('user_typing', {
-        userId: socket.userId,
-        username: socket.user.username,
-        conversationId: socket.currentConversation,
-        isTyping: false
-      });
+      socket
+        .to(`conversation_${socket.currentConversation}`)
+        .emit('user_typing', {
+          userId: socket.userId,
+          username: socket.user.username,
+          conversationId: socket.currentConversation,
+          isTyping: false,
+        });
     }
   });
 
@@ -63,11 +74,16 @@ const setupConnectionCleanup = (io: Server): void => {
   setInterval(() => {
     const now = Date.now();
     const timeout = 60000; // 1 minute timeout
-    
-    io.sockets.sockets.forEach((socket) => {
+
+    io.sockets.sockets.forEach(socket => {
       const authSocket = socket as AuthenticatedSocket;
-      if (authSocket.lastHeartbeat && (now - authSocket.lastHeartbeat) > timeout) {
-        logger.warn(`Disconnecting inactive socket for user ${authSocket.user?.username}`);
+      if (
+        authSocket.lastHeartbeat &&
+        now - authSocket.lastHeartbeat > timeout
+      ) {
+        logger.warn(
+          `Disconnecting inactive socket for user ${authSocket.user?.username}`
+        );
         socket.disconnect(true);
       }
     });
