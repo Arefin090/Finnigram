@@ -2,20 +2,25 @@ import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
 import { ValidationError, DatabaseError } from '../types';
 
-const errorHandler = (error: Error & DatabaseError & ValidationError, req: Request, res: Response, next: NextFunction): Response => {
+const errorHandler = (
+  error: Error & DatabaseError & ValidationError,
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): Response => {
   logger.error('Error occurred:', {
     error: error.message,
     stack: error.stack,
     method: req.method,
     url: req.url,
     body: req.body,
-    ip: req.ip
+    ip: req.ip,
   });
 
   if (error.name === 'ValidationError') {
     return res.status(400).json({
       error: 'Validation failed',
-      details: error.details?.map(detail => detail.message) || [error.message]
+      details: error.details?.map(detail => detail.message) || [error.message],
     });
   }
 
@@ -32,7 +37,10 @@ const errorHandler = (error: Error & DatabaseError & ValidationError, req: Reque
   }
 
   return res.status(500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message
+    error:
+      process.env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : error.message,
   });
 };
 

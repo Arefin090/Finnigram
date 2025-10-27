@@ -101,7 +101,7 @@ export interface AuthenticatedRequest extends Express.Request {
 // Redis event types
 export interface MessageEvent {
   event: string;
-  data: any;
+  data: Record<string, unknown>;
 }
 
 export interface NewMessageEvent {
@@ -166,7 +166,7 @@ export interface CreateConversationParams {
 }
 
 // API Response types
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   message?: string;
   data?: T;
   error?: string;

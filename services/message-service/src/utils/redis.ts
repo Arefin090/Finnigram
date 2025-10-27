@@ -1,9 +1,10 @@
 import { createClient, RedisClientType } from 'redis';
 import logger from './logger';
 import { PrismaClient } from '@prisma/client';
+import { ConversationWithParticipants } from '../types';
 
 const client: RedisClientType = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
 });
 
 client.on('connect', () => {
@@ -25,15 +26,24 @@ export const connectRedis = async (): Promise<void> => {
 };
 
 // Cache message counts and recent messages
-export const cacheConversationData = async (conversationId: number, data: any): Promise<void> => {
+export const cacheConversationData = async (
+  conversationId: number,
+  data: Record<string, unknown>
+): Promise<void> => {
   try {
-    await client.setEx(`conversation:${conversationId}`, 300, JSON.stringify(data));
+    await client.setEx(
+      `conversation:${conversationId}`,
+      300,
+      JSON.stringify(data)
+    );
   } catch (error) {
     logger.error('Error caching conversation data:', error);
   }
 };
 
-export const getCachedConversationData = async (conversationId: number): Promise<any | null> => {
+export const getCachedConversationData = async (
+  conversationId: number
+): Promise<Record<string, unknown> | null> => {
   try {
     const data = await client.get(`conversation:${conversationId}`);
     return data ? JSON.parse(data) : null;
@@ -44,15 +54,24 @@ export const getCachedConversationData = async (conversationId: number): Promise
 };
 
 // Cache user's conversation list
-export const cacheUserConversations = async (userId: number, conversations: any): Promise<void> => {
+export const cacheUserConversations = async (
+  userId: number,
+  conversations: ConversationWithParticipants[]
+): Promise<void> => {
   try {
-    await client.setEx(`user:${userId}:conversations`, 300, JSON.stringify(conversations));
+    await client.setEx(
+      `user:${userId}:conversations`,
+      300,
+      JSON.stringify(conversations)
+    );
   } catch (error) {
     logger.error('Error caching user conversations:', error);
   }
 };
 
-export const getCachedUserConversations = async (userId: number): Promise<any | null> => {
+export const getCachedUserConversations = async (
+  userId: number
+): Promise<ConversationWithParticipants[] | null> => {
   try {
     const data = await client.get(`user:${userId}:conversations`);
     return data ? JSON.parse(data) : null;
@@ -63,22 +82,24 @@ export const getCachedUserConversations = async (userId: number): Promise<any | 
 };
 
 // Invalidate cache when new messages arrive
-export const invalidateConversationCache = async (conversationId: number): Promise<void> => {
+export const invalidateConversationCache = async (
+  conversationId: number
+): Promise<void> => {
   try {
     await client.del(`conversation:${conversationId}`);
-    
+
     // Also invalidate user conversation lists for all participants
     // We'll need to get prisma instance from the service layer for this
     const prisma = new PrismaClient();
     const participants = await prisma.conversationParticipant.findMany({
       where: { conversationId },
-      select: { userId: true }
+      select: { userId: true },
     });
-    
-    const promises = participants.map(participant => 
+
+    const promises = participants.map(participant =>
       client.del(`user:${participant.userId}:conversations`)
     );
-    
+
     await Promise.all(promises);
     await prisma.$disconnect();
   } catch (error) {
@@ -87,7 +108,10 @@ export const invalidateConversationCache = async (conversationId: number): Promi
 };
 
 // Publish message events for real-time service
-export const publishMessage = async (event: string, data: any): Promise<void> => {
+export const publishMessage = async (
+  event: string,
+  data: Record<string, unknown>
+): Promise<void> => {
   try {
     await client.publish(event, JSON.stringify(data));
     logger.info(`Published message event: ${event}`);
