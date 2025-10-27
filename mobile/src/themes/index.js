@@ -5,11 +5,11 @@ const baseColors = {
   // Primary Brand Colors
   primary: '#4facfe',
   primaryDark: '#00f2fe',
-  
+
   // Secondary Colors
   secondary: '#667eea',
   secondaryDark: '#764ba2',
-  
+
   // Neutral Colors
   black: '#000000',
   white: '#FFFFFF',
@@ -23,7 +23,7 @@ const baseColors = {
   gray700: '#374151',
   gray800: '#1F2937',
   gray900: '#111827',
-  
+
   // iOS System Colors
   systemBlue: '#007AFF',
   systemGreen: '#34C759',
@@ -33,16 +33,16 @@ const baseColors = {
   systemPurple: '#AF52DE',
   systemPink: '#FF2D92',
   systemIndigo: '#5856D6',
-  
+
   // Background Colors
   background: '#F2F2F7',
   surface: '#FFFFFF',
-  
+
   // Text Colors
   textPrimary: '#000000',
   textSecondary: '#8E8E93',
   textTertiary: '#C7C7CC',
-  
+
   // Border Colors
   border: '#E5E5EA',
   separator: '#C6C6C8',

@@ -1,13 +1,10 @@
-import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ChatProvider } from './src/context/ChatContext';
 import { ThemeProvider } from './src/context/ThemeContext';
-
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ConversationsScreen from './src/screens/ConversationsScreen';
@@ -21,10 +18,10 @@ const Tab = createBottomTabNavigator();
 
 // Auth Stack - for login/register
 const AuthStack = () => (
-  <Stack.Navigator 
-    screenOptions={{ 
+  <Stack.Navigator
+    screenOptions={{
       headerShown: false,
-      cardStyle: { backgroundColor: '#f8f9fa' }
+      cardStyle: { backgroundColor: '#f8f9fa' },
     }}
   >
     <Stack.Screen name="Login" component={LoginScreen} />
@@ -34,23 +31,20 @@ const AuthStack = () => (
 
 // Chat Stack - for conversations and chat
 const ChatStack = () => (
-  <Stack.Navigator 
+  <Stack.Navigator
     screenOptions={{
       headerShown: false,
     }}
   >
-    <Stack.Screen 
-      name="Conversations" 
-      component={ConversationsScreen}
-    />
+    <Stack.Screen name="Conversations" component={ConversationsScreen} />
     <Stack.Screen 
       name="Chat" 
-      component={ChatScreen}
+      component={ChatScreen as any}
+      options={{
+        headerShown: false,
+      }}
     />
-    <Stack.Screen 
-      name="UserSearch" 
-      component={UserSearchScreen}
-    />
+    <Stack.Screen name="UserSearch" component={UserSearchScreen} />
   </Stack.Navigator>
 );
 
@@ -59,12 +53,14 @@ const MainTabs = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       tabBarIcon: ({ focused, color, size }) => {
-        let iconName;
+        let iconName: keyof typeof Ionicons.glyphMap;
 
         if (route.name === 'Chats') {
           iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
         } else if (route.name === 'Profile') {
           iconName = focused ? 'person' : 'person-outline';
+        } else {
+          iconName = 'help-outline';
         }
 
         return <Ionicons name={iconName} size={size} color={color} />;

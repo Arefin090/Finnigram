@@ -15,28 +15,41 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { messageApiExports } from '../services/api';
 import socketService from '../services/socket';
+import { Message } from '../types';
+import { MainStackParamList } from '../types';
+
+type ChatScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Chat'>;
+type ChatScreenRouteProp = RouteProp<MainStackParamList, 'Chat'>;
+
+interface ChatScreenProps {
+  navigation: ChatScreenNavigationProp;
+  route: ChatScreenRouteProp;
+}
 
 const { width } = Dimensions.get('window');
 
-const ChatScreen = ({ route, navigation }) => {
-  const { conversationId, conversationName } = route.params;
+const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
+  const { conversationId } = route.params;
   const { user } = useAuth();
   const { updateConversationWithSort } = useChat();
 
   // Local state for this conversation only
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [typingUsers, setTypingUsers] = useState([]);
+  const [typingUsers, setTypingUsers] = useState<number[]>([]);
 
-  const flatListRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  
+  const flatListRef = useRef<FlatList>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const unsubscribeFunctions = useRef<(() => void)[]>([]);
+
   // Animated values for typing dots
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
@@ -58,7 +71,7 @@ const ChatScreen = ({ route, navigation }) => {
     dot2Anim.setValue(0);
     dot3Anim.setValue(0);
 
-    const createBounceAnimation = (animValue, delay = 0) => {
+    const createBounceAnimation = (animValue: Animated.Value, delay = 0) => {
       return Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
@@ -87,9 +100,9 @@ const ChatScreen = ({ route, navigation }) => {
 
   const stopTypingAnimation = () => {
     dot1Anim.stopAnimation();
-    dot2Anim.stopAnimation(); 
+    dot2Anim.stopAnimation();
     dot3Anim.stopAnimation();
-    
+
     // Reset to initial positions
     dot1Anim.setValue(0);
     dot2Anim.setValue(0);
@@ -101,7 +114,7 @@ const ChatScreen = ({ route, navigation }) => {
     console.log('💬 ChatScreen mounted for conversation:', conversationId);
     loadMessages();
     joinConversation();
-    
+
     // AUTO-READ: Mark conversation as read when user opens it
     setTimeout(async () => {
       try {
@@ -111,7 +124,7 @@ const ChatScreen = ({ route, navigation }) => {
         console.error('❌ Failed to auto-mark conversation as read:', error);
       }
     }, 500); // Small delay to ensure messages are loaded first
-    
+
     return () => {
       leaveConversation();
     };
@@ -120,20 +133,22 @@ const ChatScreen = ({ route, navigation }) => {
   // Load messages from API
   const loadMessages = async () => {
     try {
-      console.log('📥 Loading messages from API for conversation:', conversationId);
+      console.log(
+        '📥 Loading messages from API for conversation:',
+        conversationId
+      );
       setLoading(true);
-      
+
       const response = await messageApiExports.getMessages(conversationId);
       const loadedMessages = response.data.messages || [];
-      
+
       console.log('✅ Loaded', loadedMessages.length, 'messages from API');
       setMessages(loadedMessages);
-      
+
       // Scroll to bottom after messages load
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 100);
-      
     } catch (error) {
       console.error('❌ Failed to load messages:', error);
       Alert.alert('Error', 'Failed to load messages');
@@ -147,7 +162,7 @@ const ChatScreen = ({ route, navigation }) => {
     if (socketService.isConnected) {
       console.log('🔗 Joining socket room for conversation:', conversationId);
       socketService.joinConversation(conversationId);
-      
+
       // Set up socket listeners for this conversation
       setupSocketListeners();
     }
@@ -158,7 +173,7 @@ const ChatScreen = ({ route, navigation }) => {
     if (socketService.isConnected) {
       console.log('🚪 Leaving socket room for conversation:', conversationId);
       socketService.leaveConversation(conversationId);
-      
+
       // Clean up socket listeners
       cleanupSocketListeners();
     }
@@ -167,10 +182,10 @@ const ChatScreen = ({ route, navigation }) => {
   // Set up socket event listeners
   const setupSocketListeners = () => {
     // Listen for new messages
-    const unsubscribeNewMessage = socketService.on('new_message', (message) => {
+    const unsubscribeNewMessage = socketService.on('new_message', message => {
       if (message.conversation_id === conversationId) {
         console.log('📨 Received new message via socket:', message.id);
-        
+
         // Add message to local state
         setMessages(prevMessages => {
           // Check if message already exists to prevent duplicates
@@ -179,9 +194,16 @@ const ChatScreen = ({ route, navigation }) => {
             console.log('⚠️ Message already exists, skipping:', message.id);
             return prevMessages;
           }
-          
-          const newMessages = [...prevMessages, message];
-          
+
+          const convertedMessage: Message = {
+            ...message,
+            status: message.status || 'sent',
+            updated_at: message.updated_at || message.created_at,
+            delivered_at: message.delivered_at || undefined,
+            read_at: message.read_at || undefined,
+          };
+          const newMessages = [...prevMessages, convertedMessage];
+
           // Update conversation preview in global state (defer to avoid render cycle conflicts)
           setTimeout(() => {
             updateConversationWithSort(conversationId, {
@@ -189,12 +211,12 @@ const ChatScreen = ({ route, navigation }) => {
               last_message_at: message.created_at,
             });
           }, 0);
-          
+
           // Scroll to bottom
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
           }, 100);
-          
+
           return newMessages;
         });
 
@@ -203,8 +225,8 @@ const ChatScreen = ({ route, navigation }) => {
     });
 
     // Listen for typing indicators
-    const unsubscribeTyping = socketService.on('user_typing', (data) => {
-      if (data.conversationId === conversationId && data.userId !== user.id) {
+    const unsubscribeTyping = socketService.on('user_typing', data => {
+      if (data.conversationId === conversationId && user && data.userId !== user.id) {
         setTypingUsers(prevTyping => {
           if (data.isTyping) {
             return [...new Set([...prevTyping, data.userId])];
@@ -216,30 +238,37 @@ const ChatScreen = ({ route, navigation }) => {
     });
 
     // Listen for message delivery status
-    const unsubscribeMessageDelivered = socketService.on('message_delivered', (data) => {
-      if (data.conversationId === conversationId) {
-        console.log('📬 Message delivered:', data.messageId);
-        
-        // Update message status in local state
-        setMessages(prevMessages => 
-          prevMessages.map(message => 
-            message.id === data.messageId 
-              ? { ...message, status: 'delivered', delivered_at: data.deliveredAt }
-              : message
-          )
-        );
+    const unsubscribeMessageDelivered = socketService.on(
+      'message_delivered',
+      data => {
+        if (data.conversationId === conversationId) {
+          console.log('📬 Message delivered:', data.messageId);
+
+          // Update message status in local state
+          setMessages(prevMessages =>
+            prevMessages.map(message =>
+              message.id === data.messageId
+                ? {
+                    ...message,
+                    status: 'delivered',
+                    delivered_at: data.deliveredAt,
+                  }
+                : message
+            )
+          );
+        }
       }
-    });
+    );
 
     // Listen for message read status
-    const unsubscribeMessageRead = socketService.on('message_read', (data) => {
+    const unsubscribeMessageRead = socketService.on('message_read', data => {
       if (data.conversationId === conversationId) {
         console.log('👁️ Message read:', data.messageId);
-        
+
         // Update message status in local state
-        setMessages(prevMessages => 
-          prevMessages.map(message => 
-            message.id === data.messageId 
+        setMessages(prevMessages =>
+          prevMessages.map(message =>
+            message.id === data.messageId
               ? { ...message, status: 'read', read_at: data.readAt }
               : message
           )
@@ -248,23 +277,30 @@ const ChatScreen = ({ route, navigation }) => {
     });
 
     // Listen for conversation read status (when all messages are marked as read)
-    const unsubscribeConversationRead = socketService.on('conversation_read', (data) => {
-      if (data.conversationId === conversationId) {
-        console.log('👁️ Conversation read:', data.messageIds.length, 'messages');
-        
-        // Update all affected messages to read status
-        setMessages(prevMessages => 
-          prevMessages.map(message => 
-            data.messageIds.includes(message.id)
-              ? { ...message, status: 'read', read_at: data.readAt }
-              : message
-          )
-        );
+    const unsubscribeConversationRead = socketService.on(
+      'conversation_read',
+      data => {
+        if (data.conversationId === conversationId) {
+          console.log(
+            '👁️ Conversation read:',
+            data.messageIds.length,
+            'messages'
+          );
+
+          // Update all affected messages to read status
+          setMessages(prevMessages =>
+            prevMessages.map(message =>
+              data.messageIds.includes(message.id)
+                ? { ...message, status: 'read', read_at: data.readAt }
+                : message
+            )
+          );
+        }
       }
-    });
+    );
 
     // Store unsubscribe functions for cleanup
-    socketService._currentUnsubscribers = [
+    unsubscribeFunctions.current = [
       unsubscribeNewMessage,
       unsubscribeTyping,
       unsubscribeMessageDelivered,
@@ -275,9 +311,9 @@ const ChatScreen = ({ route, navigation }) => {
 
   // Clean up socket listeners
   const cleanupSocketListeners = () => {
-    if (socketService._currentUnsubscribers) {
-      socketService._currentUnsubscribers.forEach(unsubscribe => unsubscribe());
-      socketService._currentUnsubscribers = null;
+    if (unsubscribeFunctions.current) {
+      unsubscribeFunctions.current.forEach(unsubscribe => unsubscribe());
+      unsubscribeFunctions.current = [];
     }
   };
 
@@ -288,23 +324,22 @@ const ChatScreen = ({ route, navigation }) => {
 
     setSending(true);
     setMessageText('');
-    
+
     // Stop typing indicator
     socketService.stopTyping(conversationId);
-    
+
     try {
       console.log('🚀 Sending message:', text);
-      
-      const response = await messageApiExports.sendMessage({
+
+      await messageApiExports.sendMessage({
         conversationId,
         content: text,
-        messageType: 'text'
+        messageType: 'text',
       });
-      
+
       console.log('✅ Message sent successfully');
-      
+
       // Message will be added via socket listener, no need to add manually
-      
     } catch (error) {
       console.error('❌ Failed to send message:', error);
       Alert.alert('Error', 'Failed to send message');
@@ -315,18 +350,18 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   // Handle typing
-  const handleTextChange = (text) => {
+  const handleTextChange = (text: string) => {
     setMessageText(text);
-    
+
     if (text.trim()) {
       // Start typing indicator
       socketService.startTyping(conversationId);
-      
+
       // Clear existing timeout
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      
+
       // Stop typing after 3 seconds of inactivity
       typingTimeoutRef.current = setTimeout(() => {
         socketService.stopTyping(conversationId);
@@ -337,67 +372,102 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   // Format message time
-  const formatMessageTime = (timestamp) => {
+  const formatMessageTime = (timestamp: string): string => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   // Get message status icon
-  const getMessageStatusIcon = (message) => {
-    if (message.sender_id !== user.id) return null; // Only show status for own messages
-    
+  const getMessageStatusIcon = (message: Message) => {
+    if (!user || message.sender_id !== user.id) return null; // Only show status for own messages
+
     switch (message.status) {
       case 'sent':
         // Single gray checkmark - message sent to server
-        return <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.6)" style={styles.statusIcon} />;
-      
+        return (
+          <Ionicons
+            name="checkmark"
+            size={14}
+            color="rgba(255, 255, 255, 0.6)"
+            style={styles.statusIcon}
+          />
+        );
+
       case 'delivered':
         // Double gray checkmarks - message delivered to recipient's device
         return (
           <View style={styles.statusIconContainer}>
-            <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheck]} />
-            <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.8)" style={[styles.statusIcon, styles.doubleCheckSecond]} />
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color="rgba(255, 255, 255, 0.8)"
+              style={[styles.statusIcon, styles.doubleCheck]}
+            />
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color="rgba(255, 255, 255, 0.8)"
+              style={[styles.statusIcon, styles.doubleCheckSecond]}
+            />
           </View>
         );
-      
+
       case 'read':
         // Blue double checkmarks - message read by recipient (like WhatsApp)
         return (
           <View style={styles.statusIconContainer}>
-            <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheck]} />
-            <Ionicons name="checkmark" size={14} color="#4facfe" style={[styles.statusIcon, styles.doubleCheckSecond]} />
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color="#4facfe"
+              style={[styles.statusIcon, styles.doubleCheck]}
+            />
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color="#4facfe"
+              style={[styles.statusIcon, styles.doubleCheckSecond]}
+            />
           </View>
         );
-      
+
       default:
         return null;
     }
   };
 
   // Render message item
-  const renderMessage = ({ item }) => {
-    const isMyMessage = item.sender_id === user.id;
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isMyMessage = user && item.sender_id === user.id;
 
     return (
-      <View style={[
-        styles.messageContainer,
-        isMyMessage ? styles.myMessage : styles.otherMessage
-      ]}>
-        <View style={[
-          styles.messageBubble,
-          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
-        ]}>
-          <Text style={[
-            styles.messageText,
-            isMyMessage ? styles.myMessageText : styles.otherMessageText
-          ]}>
+      <View
+        style={[
+          styles.messageContainer,
+          isMyMessage ? styles.myMessage : styles.otherMessage,
+        ]}
+      >
+        <View
+          style={[
+            styles.messageBubble,
+            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
+          ]}
+        >
+          <Text
+            style={[
+              styles.messageText,
+              isMyMessage ? styles.myMessageText : styles.otherMessageText,
+            ]}
+          >
             {item.content}
           </Text>
           <View style={styles.messageFooter}>
-            <Text style={[
-              styles.messageTime,
-              isMyMessage ? styles.myMessageTime : styles.otherMessageTime
-            ]}>
+            <Text
+              style={[
+                styles.messageTime,
+                isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
+              ]}
+            >
               {formatMessageTime(item.created_at)}
             </Text>
             {getMessageStatusIcon(item)}
@@ -415,56 +485,62 @@ const ChatScreen = ({ route, navigation }) => {
       <Animated.View style={styles.typingContainer}>
         <View style={styles.typingBubble}>
           <View style={styles.typingDots}>
-            <Animated.View 
+            <Animated.View
               style={[
-                styles.typingDot, 
+                styles.typingDot,
                 {
-                  transform: [{
-                    translateY: dot1Anim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, -6],
-                    })
-                  }],
+                  transform: [
+                    {
+                      translateY: dot1Anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, -6],
+                      }),
+                    },
+                  ],
                   opacity: dot1Anim.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0.3, 0.9],
-                  })
-                }
-              ]} 
+                  }),
+                },
+              ]}
             />
-            <Animated.View 
+            <Animated.View
               style={[
-                styles.typingDot, 
+                styles.typingDot,
                 {
-                  transform: [{
-                    translateY: dot2Anim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, -6],
-                    })
-                  }],
+                  transform: [
+                    {
+                      translateY: dot2Anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, -6],
+                      }),
+                    },
+                  ],
                   opacity: dot2Anim.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0.3, 0.9],
-                  })
-                }
-              ]} 
+                  }),
+                },
+              ]}
             />
-            <Animated.View 
+            <Animated.View
               style={[
-                styles.typingDot, 
+                styles.typingDot,
                 {
-                  transform: [{
-                    translateY: dot3Anim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, -6],
-                    })
-                  }],
+                  transform: [
+                    {
+                      translateY: dot3Anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, -6],
+                      }),
+                    },
+                  ],
                   opacity: dot3Anim.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0.3, 0.9],
-                  })
-                }
-              ]} 
+                  }),
+                },
+              ]}
             />
           </View>
         </View>
@@ -481,18 +557,18 @@ const ChatScreen = ({ route, navigation }) => {
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <StatusBar style="light" />
-      
+
       <FlatList
         ref={flatListRef}
         data={messages}
         renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={item => item.id.toString()}
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContainer}
         ListFooterComponent={renderTypingIndicator}
@@ -519,11 +595,13 @@ const ChatScreen = ({ route, navigation }) => {
             maxLength={4000}
             editable={!sending}
           />
-          
+
           <TouchableOpacity
             style={[
               styles.sendButton,
-              messageText.trim() && !sending ? styles.sendButtonActive : styles.sendButtonInactive
+              messageText.trim() && !sending
+                ? styles.sendButtonActive
+                : styles.sendButtonInactive,
             ]}
             onPress={handleSendMessage}
             disabled={!messageText.trim() || sending}
@@ -539,10 +617,10 @@ const ChatScreen = ({ route, navigation }) => {
                 <Ionicons name="send" size={18} color="#FFFFFF" />
               </LinearGradient>
             ) : (
-              <Ionicons 
-                name={sending ? 'hourglass' : 'send'} 
-                size={18} 
-                color="#8E8E93" 
+              <Ionicons
+                name={sending ? 'hourglass' : 'send'}
+                size={18}
+                color="#8E8E93"
               />
             )}
           </TouchableOpacity>
@@ -557,7 +635,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -569,7 +647,7 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontWeight: '500',
   },
-  
+
   messagesList: {
     flex: 1,
   },

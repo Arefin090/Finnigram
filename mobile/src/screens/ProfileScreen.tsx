@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -14,37 +13,34 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import socketService from '../services/socket';
 
-const { width } = Dimensions.get('window');
-
-const ProfileScreen = () => {
+const ProfileScreen: React.FC = () => {
   const { user, logout } = useAuth();
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('Attempting logout...');
-              await logout();
-              console.log('Logout completed');
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            console.log('Attempting logout...');
+            await logout();
+            console.log('Logout completed');
+          } catch (error) {
+            console.error('Logout error:', error);
+            Alert.alert('Error', 'Failed to sign out. Please try again.');
           }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const handleQuickAction = (action) => {
-    Alert.alert('Coming Soon', `${action} functionality will be available soon!`);
+  const handleQuickAction = (action: string) => {
+    Alert.alert(
+      'Coming Soon',
+      `${action} functionality will be available soon!`
+    );
   };
 
   const getConnectionStatus = () => {
@@ -52,14 +48,21 @@ const ProfileScreen = () => {
     return status.isConnected ? 'Connected' : 'Disconnected';
   };
 
-  const getInitials = (name) => {
-    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  const getInitials = (name: string) => {
+    return name
+      ? name
+          .split(' ')
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2)
+      : 'U';
   };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      
+
       {/* Beautiful Header with Gradient */}
       <LinearGradient
         colors={['#667eea', '#764ba2']}
@@ -71,34 +74,37 @@ const ProfileScreen = () => {
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {getInitials(user?.displayName || user?.username)}
+                {getInitials(user?.displayName || user?.username || 'U')}
               </Text>
             </View>
             <TouchableOpacity style={styles.editAvatarButton}>
               <Ionicons name="camera" size={16} color="#667eea" />
             </TouchableOpacity>
           </View>
-          
+
           <Text style={styles.displayName}>
             {user?.displayName || user?.username || 'User'}
           </Text>
           <Text style={styles.username}>@{user?.username}</Text>
-          
+
           <View style={styles.connectionStatus}>
-            <View style={[
-              styles.statusDot, 
-              getConnectionStatus() === 'Connected' ? styles.statusConnected : styles.statusDisconnected
-            ]} />
+            <View
+              style={[
+                styles.statusDot,
+                getConnectionStatus() === 'Connected'
+                  ? styles.statusConnected
+                  : styles.statusDisconnected,
+              ]}
+            />
             <Text style={styles.statusText}>{getConnectionStatus()}</Text>
           </View>
         </View>
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        
         {/* Quick Actions */}
         <View style={styles.quickActions}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => handleQuickAction('Edit Profile')}
             activeOpacity={0.7}
@@ -113,8 +119,8 @@ const ProfileScreen = () => {
             </LinearGradient>
             <Text style={styles.quickActionText}>Edit Profile</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => handleQuickAction('Settings')}
             activeOpacity={0.7}
@@ -129,8 +135,8 @@ const ProfileScreen = () => {
             </LinearGradient>
             <Text style={styles.quickActionText}>Settings</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => handleQuickAction('Share Profile')}
             activeOpacity={0.7}
@@ -156,7 +162,11 @@ const ProfileScreen = () => {
           <View style={styles.infoRow}>
             <Ionicons name="calendar-outline" size={20} color="#8E8E93" />
             <Text style={styles.infoText}>
-              Joined {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              Joined{' '}
+              {new Date().toLocaleDateString('en-US', {
+                month: 'long',
+                year: 'numeric',
+              })}
             </Text>
           </View>
         </View>
@@ -180,12 +190,14 @@ const ProfileScreen = () => {
         </View>
 
         {/* About Finnigram */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.aboutCard}
-          onPress={() => Alert.alert(
-            'About Finnigram',
-            'The messaging app that helps you be a better friend, partner, and family member.\n\nBuilt with ❤️ by Finn'
-          )}
+          onPress={() =>
+            Alert.alert(
+              'About Finnigram',
+              'The messaging app that helps you be a better friend, partner, and family member.\n\nBuilt with ❤️ by Finn'
+            )
+          }
           activeOpacity={0.7}
         >
           <LinearGradient
@@ -198,7 +210,9 @@ const ProfileScreen = () => {
           </LinearGradient>
           <View style={styles.aboutContent}>
             <Text style={styles.aboutTitle}>About Finnigram</Text>
-            <Text style={styles.aboutSubtitle}>Version 1.0.0 • Tap to learn more</Text>
+            <Text style={styles.aboutSubtitle}>
+              Version 1.0.0 • Tap to learn more
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
         </TouchableOpacity>

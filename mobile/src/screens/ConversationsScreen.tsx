@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   Alert,
   Animated,
   Platform,
-  Dimensions,
   LayoutAnimation,
   UIManager,
 } from 'react-native';
@@ -19,24 +18,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 
-const { width } = Dimensions.get('window');
-
 // Enable LayoutAnimation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const ConversationsScreen = ({ navigation }) => {
+interface ConversationsScreenProps {
+  navigation: {
+    navigate: (screen: string, params?: unknown) => void;
+    setOptions?: (options: unknown) => void;
+  };
+}
+
+const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
+  navigation,
+}) => {
   const { user } = useAuth();
-  const { 
-    conversations, 
-    loading, 
-    error, 
-    loadConversations, 
-    onlineUsers,
-    clearError 
-  } = useChat();
-  
+  const { conversations, error, loadConversations, clearError } = useChat();
+
   const [refreshing, setRefreshing] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const searchAnimation = new Animated.Value(0);
@@ -78,12 +80,12 @@ const ConversationsScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
-  const formatLastSeen = (timestamp) => {
+  const formatLastSeen = (timestamp: string | undefined): string => {
     if (!timestamp) return '';
-    
+
     const now = new Date();
     const messageTime = new Date(timestamp);
-    const diffMs = now - messageTime;
+    const diffMs = now.getTime() - messageTime.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
@@ -92,116 +94,142 @@ const ConversationsScreen = ({ navigation }) => {
     if (diffMins < 60) return `${diffMins}m`;
     if (diffHours < 24) return `${diffHours}h`;
     if (diffDays < 7) return `${diffDays}d`;
-    
+
     return messageTime.toLocaleDateString();
   };
 
-  const getConversationName = useCallback((conversation) => {
-    if (conversation.type === 'group') {
-      return conversation.name || 'Group Chat';
-    }
-    
-    // For direct messages, show the other user's name
-    if (conversation.participants && conversation.participants.length > 0) {
-      // Find the other participant (not the current user)
-      const otherParticipant = conversation.participants.find(p => 
-        p.user_id !== user.id && p.user_id !== user.user_id
-      );
-      
-      if (otherParticipant) {
-        // Try multiple field names for display name
-        const displayName = otherParticipant.display_name || 
-                           otherParticipant.displayName || 
-                           otherParticipant.username ||
-                           otherParticipant.name ||
-                           'Unknown User';
-        return displayName;
+  const getConversationName = useCallback(
+    (conversation: any): string => {
+      if (conversation.type === 'group') {
+        return conversation.name || 'Group Chat';
       }
-    }
-    
-    // If participants are undefined, fall back
-    if (conversation.participants === undefined) {
-      return 'Loading...';
-    }
-    
-    // Fallback to conversation name or generic message
-    return conversation.name || 'Direct Message';
-  }, [user.id]);
 
-  const isUserOnline = (conversation) => {
+      // For direct messages, show the other user's name
+      if (conversation.participants && conversation.participants.length > 0) {
+        // Find the other participant (not the current user)
+        const otherParticipant = conversation.participants.find(
+          (p: any) => p.user_id !== user?.id && p.user_id !== user?.user_id
+        );
+
+        if (otherParticipant) {
+          // Try multiple field names for display name
+          const displayName =
+            otherParticipant.display_name ||
+            otherParticipant.displayName ||
+            otherParticipant.username ||
+            otherParticipant.name ||
+            'Unknown User';
+          return displayName;
+        }
+      }
+
+      // If participants are undefined, fall back
+      if (conversation.participants === undefined) {
+        return 'Loading...';
+      }
+
+      // Fallback to conversation name or generic message
+      return conversation.name || 'Direct Message';
+    },
+    [user?.id, user?.user_id]
+  );
+
+  const isUserOnline = (_conversation: any) => {
     // Simplified online check - would need participant user IDs in real app
     return false;
   };
 
-  const getInitials = (name) => {
-    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  const getInitials = (name: string) => {
+    return name
+      ? name
+          .split(' ')
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2)
+      : 'U';
   };
 
-  const renderConversation = useCallback(({ item, index }) => (
-    <Animated.View style={[
-      styles.conversationWrapper,
-      {
-        opacity: 1,
-        transform: [{ translateY: 0 }]
-      }
-    ]}>
-      <TouchableOpacity
-        style={styles.conversationItem}
-        onPress={() => navigation.navigate('Chat', {
-          conversationId: item.id,
-          conversationName: getConversationName(item),
-          conversationType: item.type,
-        })}
-        activeOpacity={0.7}
+  const renderConversation = useCallback(
+    ({ item }: { item: any }) => (
+      <Animated.View
+        style={[
+          styles.conversationWrapper,
+          {
+            opacity: 1,
+            transform: [{ translateY: 0 }],
+          },
+        ]}
       >
-        <View style={styles.avatarContainer}>
-          <LinearGradient
-            colors={item.type === 'group' ? ['#667eea', '#764ba2'] : ['#4facfe', '#00f2fe']}
-            style={[styles.avatar, isUserOnline(item) && styles.onlineAvatar]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            {item.type === 'group' ? (
-              <Ionicons name="people" size={20} color="#fff" />
-            ) : (
-              <Text style={styles.avatarText}>
-                {getInitials(getConversationName(item))}
-              </Text>
-            )}
-          </LinearGradient>
-          {isUserOnline(item) && <View style={styles.onlineIndicator} />}
-        </View>
-        
-        <View style={styles.conversationContent}>
-          <View style={styles.conversationHeader}>
-            <Text style={styles.conversationName} numberOfLines={1}>
-              {getConversationName(item)}
-            </Text>
-            <Text style={styles.timestamp}>
-              {formatLastSeen(item.last_message_at)}
-            </Text>
-          </View>
-          
-          <View style={styles.messagePreview}>
-            <Text style={styles.lastMessage} numberOfLines={2}>
-              {item.last_message || 'No messages yet'}
-            </Text>
-            {item.unread_count > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadCount}>
-                  {item.unread_count > 99 ? '99+' : item.unread_count}
+        <TouchableOpacity
+          style={styles.conversationItem}
+          onPress={() =>
+            navigation.navigate('Chat', {
+              conversationId: item.id,
+              conversationName: getConversationName(item),
+              conversationType: item.type,
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <View style={styles.avatarContainer}>
+            <LinearGradient
+              colors={
+                item.type === 'group'
+                  ? ['#667eea', '#764ba2']
+                  : ['#4facfe', '#00f2fe']
+              }
+              style={[styles.avatar, isUserOnline(item) && styles.onlineAvatar]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {item.type === 'group' ? (
+                <Ionicons name="people" size={20} color="#fff" />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {getInitials(getConversationName(item))}
                 </Text>
-              </View>
-            )}
+              )}
+            </LinearGradient>
+            {isUserOnline(item) && <View style={styles.onlineIndicator} />}
           </View>
-        </View>
-        
-        <View style={styles.conversationActions}>
-          <Ionicons name="chevron-forward-outline" size={16} color="#C7C7CC" />
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  ), [getConversationName, getInitials, isUserOnline, navigation]);
+
+          <View style={styles.conversationContent}>
+            <View style={styles.conversationHeader}>
+              <Text style={styles.conversationName} numberOfLines={1}>
+                {getConversationName(item)}
+              </Text>
+              <Text style={styles.timestamp}>
+                {formatLastSeen(item.last_message_at)}
+              </Text>
+            </View>
+
+            <View style={styles.messagePreview}>
+              <Text style={styles.lastMessage} numberOfLines={2}>
+                {item.last_message || 'No messages yet'}
+              </Text>
+              {item.unread_count > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadCount}>
+                    {item.unread_count > 99 ? '99+' : item.unread_count}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.conversationActions}>
+            <Ionicons
+              name="chevron-forward-outline"
+              size={16}
+              color="#C7C7CC"
+            />
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    ),
+    [getConversationName, getInitials, isUserOnline, navigation]
+  );
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -217,11 +245,14 @@ const ConversationsScreen = ({ navigation }) => {
       <Text style={styles.emptySubtitle}>
         Start meaningful conversations with the people who matter most
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.emptyButton}
         onPress={() => {
           console.log('Start conversation pressed');
-          Alert.alert('Coming Soon', 'User search and conversation creation is coming soon!');
+          Alert.alert(
+            'Coming Soon',
+            'User search and conversation creation is coming soon!'
+          );
         }}
       >
         <LinearGradient
@@ -240,7 +271,7 @@ const ConversationsScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      
+
       {/* Header */}
       <LinearGradient
         colors={['#667eea', '#764ba2']}
@@ -251,7 +282,7 @@ const ConversationsScreen = ({ navigation }) => {
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Finnigram</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.headerButton}
               onPress={() => setSearchVisible(!searchVisible)}
             >
@@ -263,42 +294,60 @@ const ConversationsScreen = ({ navigation }) => {
 
       {/* Search Bar */}
       {searchVisible && (
-        <Animated.View style={[styles.searchContainer, {
-          opacity: searchAnimation,
-          transform: [{ translateY: searchAnimation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-20, 0]
-          })}]
-        }]}>
+        <Animated.View
+          style={[
+            styles.searchContainer,
+            {
+              opacity: searchAnimation,
+              transform: [
+                {
+                  translateY: searchAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           <View style={styles.searchBar}>
             <Ionicons name="search" size={18} color="#8E8E93" />
-            <Text style={styles.searchPlaceholder}>Search conversations...</Text>
+            <Text style={styles.searchPlaceholder}>
+              Search conversations...
+            </Text>
           </View>
         </Animated.View>
       )}
-      
+
       <FlatList
         data={conversations}
         renderItem={renderConversation}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={item => item.id.toString()}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor="#667eea"
             colors={['#667eea']}
           />
         }
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={conversations.length === 0 ? styles.emptyList : styles.listContent}
+        contentContainerStyle={
+          conversations.length === 0 ? styles.emptyList : styles.listContent
+        }
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
-      
-      <Animated.View style={[styles.fabContainer, {
-        transform: [{ scale: fabAnimation }]
-      }]}>
-        <TouchableOpacity 
+
+      <Animated.View
+        style={[
+          styles.fabContainer,
+          {
+            transform: [{ scale: fabAnimation }],
+          },
+        ]}
+      >
+        <TouchableOpacity
           style={styles.fab}
           onPress={() => {
             console.log('FAB clicked - navigating to user search');
@@ -314,7 +363,7 @@ const ConversationsScreen = ({ navigation }) => {
                 useNativeDriver: true,
               }),
             ]).start();
-            
+
             navigation.navigate('UserSearch');
           }}
           activeOpacity={0.8}
@@ -338,7 +387,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  
+
   // Header Styles
   header: {
     paddingTop: Platform.OS === 'ios' ? 50 : 25,

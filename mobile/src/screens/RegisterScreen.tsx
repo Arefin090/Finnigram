@@ -11,10 +11,29 @@ import {
   ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
+import { AuthStackParamList } from '../types';
 
-const RegisterScreen = ({ navigation }) => {
-  const [formData, setFormData] = useState({
+type RegisterScreenNavigationProp = StackNavigationProp<
+  AuthStackParamList,
+  'Register'
+>;
+
+interface RegisterScreenProps {
+  navigation: RegisterScreenNavigationProp;
+}
+
+interface FormData {
+  email: string;
+  username: string;
+  password: string;
+  confirmPassword: string;
+  displayName: string;
+}
+
+const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
+  const [formData, setFormData] = useState<FormData>({
     email: '',
     username: '',
     password: '',
@@ -22,7 +41,7 @@ const RegisterScreen = ({ navigation }) => {
     displayName: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const { register, error, clearError } = useAuth();
 
   useEffect(() => {
@@ -30,16 +49,22 @@ const RegisterScreen = ({ navigation }) => {
       Alert.alert('Registration Failed', error);
       clearError();
     }
-  }, [error]);
+  }, [error, clearError]);
 
-  const updateField = (field, value) => {
+  const updateField = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const validateForm = () => {
-    const { email, username, password, confirmPassword, displayName } = formData;
-    
-    if (!email.trim() || !username.trim() || !password.trim() || !displayName.trim()) {
+    const { email, username, password, confirmPassword, displayName } =
+      formData;
+
+    if (
+      !email.trim() ||
+      !username.trim() ||
+      !password.trim() ||
+      !displayName.trim()
+    ) {
       Alert.alert('Error', 'Please fill in all required fields');
       return false;
     }
@@ -72,20 +97,20 @@ const RegisterScreen = ({ navigation }) => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    
+
     try {
       const { email, username, password, displayName } = formData;
       const result = await register(
-        email.trim().toLowerCase(), 
-        username.trim().toLowerCase(), 
+        email.trim().toLowerCase(),
+        username.trim().toLowerCase(),
         password,
         displayName.trim()
       );
-      
+
       if (!result.success) {
         Alert.alert('Registration Failed', result.error);
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
@@ -93,7 +118,7 @@ const RegisterScreen = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -111,7 +136,7 @@ const RegisterScreen = ({ navigation }) => {
                 placeholder="Your full name"
                 placeholderTextColor="#666"
                 value={formData.displayName}
-                onChangeText={(text) => updateField('displayName', text)}
+                onChangeText={text => updateField('displayName', text)}
                 autoCapitalize="words"
                 autoCorrect={false}
                 editable={!isLoading}
@@ -125,7 +150,7 @@ const RegisterScreen = ({ navigation }) => {
                 placeholder="Choose a username"
                 placeholderTextColor="#666"
                 value={formData.username}
-                onChangeText={(text) => updateField('username', text)}
+                onChangeText={text => updateField('username', text)}
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!isLoading}
@@ -139,7 +164,7 @@ const RegisterScreen = ({ navigation }) => {
                 placeholder="Enter your email"
                 placeholderTextColor="#666"
                 value={formData.email}
-                onChangeText={(text) => updateField('email', text)}
+                onChangeText={text => updateField('email', text)}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -154,7 +179,7 @@ const RegisterScreen = ({ navigation }) => {
                 placeholder="Create a password (min. 8 characters)"
                 placeholderTextColor="#666"
                 value={formData.password}
-                onChangeText={(text) => updateField('password', text)}
+                onChangeText={text => updateField('password', text)}
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -169,7 +194,7 @@ const RegisterScreen = ({ navigation }) => {
                 placeholder="Confirm your password"
                 placeholderTextColor="#666"
                 value={formData.confirmPassword}
-                onChangeText={(text) => updateField('confirmPassword', text)}
+                onChangeText={text => updateField('confirmPassword', text)}
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -177,7 +202,7 @@ const RegisterScreen = ({ navigation }) => {
               />
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.button, isLoading && styles.buttonDisabled]}
               onPress={handleRegister}
               disabled={isLoading}

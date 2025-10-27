@@ -1,13 +1,16 @@
 import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { LoadingScreenProps } from '../types';
 
-const LoadingScreen = () => {
+const LoadingScreen: React.FC<LoadingScreenProps> = ({
+  message = 'Loading Finnigram...',
+}) => {
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
       <ActivityIndicator size="large" color="#007AFF" />
-      <Text style={styles.text}>Loading Finnigram...</Text>
+      <Text style={styles.text}>{message}</Text>
     </View>
   );
 };

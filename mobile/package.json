@@ -7,11 +7,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "echo 'Mobile linting skipped - using Expo defaults'",
-    "lint:fix": "echo 'Mobile lint fix skipped'",
-    "format": "echo 'Mobile formatting skipped'",
-    "format:check": "echo 'Mobile format check skipped'",
-    "typecheck": "echo 'Mobile typecheck skipped'"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.4",
@@ -34,6 +34,18 @@
   },
   "private": true,
   "devDependencies": {
-    "@types/react": "~19.1.10"
+    "@react-native-community/eslint-config": "^3.2.0",
+    "@types/react": "~19.1.10",
+    "@types/react-native": "^0.72.8",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint-config-expo": "^10.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-native": "^5.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
   }
 }

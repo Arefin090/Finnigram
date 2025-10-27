@@ -8,22 +8,27 @@ import {
   StyleSheet,
   Alert,
   Platform,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { userApiExports, messageApiExports } from '../services/api';
+import { User, ConversationCreateData } from '../types';
 import { useChat } from '../context/ChatContext';
 
-const { width } = Dimensions.get('window');
+interface UserSearchScreenProps {
+  navigation: {
+    navigate: (screen: string, params?: any) => void;
+    goBack?: () => void;
+  };
+}
 
-const UserSearchScreen = ({ navigation }) => {
+const UserSearchScreen: React.FC<UserSearchScreenProps> = ({ navigation }) => {
   const { user } = useAuth();
   const { loadConversations } = useChat();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [creatingConversation, setCreatingConversation] = useState(false);
@@ -49,8 +54,8 @@ const UserSearchScreen = ({ navigation }) => {
 
     try {
       const response = await userApiExports.searchUsers(searchQuery.trim());
-      // Filter out current user  
-      const filteredResults = response.data.users.filter(u => u.id !== user.id);
+      // Filter out current user
+      const filteredResults = response.data.users.filter(u => u.id !== user?.id);
       setSearchResults(filteredResults);
     } catch (error) {
       console.error('Search error:', error);
@@ -61,30 +66,33 @@ const UserSearchScreen = ({ navigation }) => {
     }
   };
 
-  const handleStartConversation = async (selectedUser) => {
+  const handleStartConversation = async (selectedUser: User) => {
     if (creatingConversation) return;
-    
+
     setCreatingConversation(true);
-    
+
     try {
       console.log('🚀 Starting conversation with user:', selectedUser);
-      
+
       // Create a direct conversation
-      const conversationData = {
+      const conversationData: ConversationCreateData = {
         type: 'direct',
         participants: [selectedUser.id],
+        name: undefined,
+        description: undefined,
       };
-      
-      const response = await messageApiExports.createConversation(conversationData);
+
+      const response =
+        await messageApiExports.createConversation(conversationData);
       const conversation = response.data.conversation;
-      
+
       console.log('✅ Conversation created:', conversation);
-      
+
       // Small delay to allow real-time sync
       setTimeout(async () => {
         // Refresh conversations list to ensure it appears
         await loadConversations();
-        
+
         // Navigate to the new conversation
         navigation.navigate('Chat', {
           conversationId: conversation.id,
@@ -92,7 +100,6 @@ const UserSearchScreen = ({ navigation }) => {
           conversationType: 'direct',
         });
       }, 500);
-      
     } catch (error) {
       console.error('❌ Start conversation error:', error);
       Alert.alert('Error', 'Failed to start conversation. Please try again.');
@@ -101,11 +108,18 @@ const UserSearchScreen = ({ navigation }) => {
     }
   };
 
-  const getInitials = (name) => {
-    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  const getInitials = (name: string): string => {
+    return name
+      ? name
+          .split(' ')
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2)
+      : 'U';
   };
 
-  const renderUser = ({ item }) => (
+  const renderUser = ({ item }: { item: User }) => (
     <TouchableOpacity
       style={styles.userItem}
       onPress={() => handleStartConversation(item)}
@@ -121,14 +135,14 @@ const UserSearchScreen = ({ navigation }) => {
           {getInitials(item.displayName || item.username)}
         </Text>
       </LinearGradient>
-      
+
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>
           {item.displayName || item.username}
         </Text>
         <Text style={styles.username}>@{item.username}</Text>
       </View>
-      
+
       {creatingConversation ? (
         <Text style={styles.loadingText}>Starting...</Text>
       ) : (
@@ -179,7 +193,7 @@ const UserSearchScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      
+
       {/* Header */}
       <LinearGradient
         colors={['#667eea', '#764ba2']}
@@ -188,9 +202,9 @@ const UserSearchScreen = ({ navigation }) => {
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.headerContent}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.goBack?.()}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
@@ -224,14 +238,16 @@ const UserSearchScreen = ({ navigation }) => {
           )}
         </View>
       </View>
-      
+
       {/* Results */}
       <FlatList
         data={searchResults}
         renderItem={renderUser}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={item => item.id.toString()}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={searchResults.length === 0 ? styles.emptyList : styles.listContent}
+        contentContainerStyle={
+          searchResults.length === 0 ? styles.emptyList : styles.listContent
+        }
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -244,7 +260,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  
+
   // Header Styles
   header: {
     paddingTop: Platform.OS === 'ios' ? 50 : 25,

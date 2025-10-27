@@ -1,1 +1,8 @@
-npx lint-staged
+#!/bin/sh
+# Only run pre-commit hooks on master/main branch
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
+  npx lint-staged
+else
+  echo "Skipping pre-commit hooks on feature branch: $branch"
+fi

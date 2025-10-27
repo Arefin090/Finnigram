@@ -11,13 +11,24 @@ import {
   ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
+import { AuthStackParamList } from '../types';
 
-const LoginScreen = ({ navigation }) => {
+type LoginScreenNavigationProp = StackNavigationProp<
+  AuthStackParamList,
+  'Login'
+>;
+
+interface LoginScreenProps {
+  navigation: LoginScreenNavigationProp;
+}
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const { login, error, clearError } = useAuth();
 
   useEffect(() => {
@@ -25,7 +36,7 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Login Failed', error);
       clearError();
     }
-  }, [error]);
+  }, [error, clearError]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -34,14 +45,14 @@ const LoginScreen = ({ navigation }) => {
     }
 
     setIsLoading(true);
-    
+
     try {
       const result = await login(email.trim().toLowerCase(), password);
-      
+
       if (!result.success) {
         Alert.alert('Login Failed', result.error);
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
@@ -49,7 +60,7 @@ const LoginScreen = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -90,7 +101,7 @@ const LoginScreen = ({ navigation }) => {
               />
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.button, isLoading && styles.buttonDisabled]}
               onPress={handleLogin}
               disabled={isLoading}
