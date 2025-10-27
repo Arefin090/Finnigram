@@ -5,67 +5,90 @@ import logger from '../utils/logger';
 import { JWTPayload, TokenPair, AuthenticatedRequest } from '../types';
 
 export const generateTokens = (userId: number): TokenPair => {
-  const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET!, {
-    expiresIn: '15m'
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+
+  const accessToken = jwt.sign({ userId }, jwtSecret, {
+    expiresIn: '15m',
   });
-  
-  const refreshToken = jwt.sign({ userId }, process.env.JWT_SECRET!, {
-    expiresIn: '7d'
+
+  const refreshToken = jwt.sign({ userId }, jwtSecret, {
+    expiresIn: '7d',
   });
-  
+
   return { accessToken, refreshToken };
 };
 
-export const verifyToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+export const verifyToken = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({ error: 'Access token required' });
       return;
     }
-    
+
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
-    
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'Server configuration error' });
+      return;
+    }
+    const decoded = jwt.verify(token, jwtSecret) as JWTPayload;
+
     const user = await UserService.findById(decoded.userId);
     if (!user) {
       res.status(401).json({ error: 'User not found' });
       return;
     }
-    
+
     req.user = user;
     next();
-  } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'TokenExpiredError') {
       res.status(401).json({ error: 'Token expired' });
       return;
     }
-    if (error.name === 'JsonWebTokenError') {
+    if (error instanceof Error && error.name === 'JsonWebTokenError') {
       res.status(401).json({ error: 'Invalid token' });
       return;
     }
-    
+
     logger.error('Token verification error:', error);
     res.status(500).json({ error: 'Authentication failed' });
   }
 };
 
-export const optionalAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+export const optionalAuth = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        next();
+        return;
+      }
+      const decoded = jwt.verify(token, jwtSecret) as JWTPayload;
       const user = await UserService.findById(decoded.userId);
       if (user) {
         req.user = user;
       }
     }
-    
+
     next();
-  } catch (error) {
+  } catch (_error) {
     // Continue without authentication for optional auth
     next();
   }

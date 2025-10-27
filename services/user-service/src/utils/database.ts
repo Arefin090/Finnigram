@@ -24,7 +24,7 @@ const prisma = new PrismaClient({
 
 // Log database queries in development
 if (process.env.NODE_ENV === 'development') {
-  prisma.$on('query', (e) => {
+  prisma.$on('query', e => {
     logger.debug('Query: ' + e.query);
     logger.debug('Params: ' + e.params);
     logger.debug('Duration: ' + e.duration + 'ms');
@@ -32,17 +32,17 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Log database errors
-prisma.$on('error', (e) => {
+prisma.$on('error', e => {
   logger.error('Database error:', e);
 });
 
 // Log database info
-prisma.$on('info', (e) => {
+prisma.$on('info', e => {
   logger.info('Database info:', e.message);
 });
 
 // Log database warnings
-prisma.$on('warn', (e) => {
+prisma.$on('warn', e => {
   logger.warn('Database warning:', e.message);
 });
 
