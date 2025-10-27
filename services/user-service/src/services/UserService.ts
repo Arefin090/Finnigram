@@ -1,32 +1,37 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../utils/database';
 import logger from '../utils/logger';
-import { 
-  User, 
-  UserSearchResult, 
-  CreateUserData, 
+import {
+  User,
+  UserSearchResult,
+  CreateUserData,
   UpdateUserData,
-  UserServiceInterface 
+  UserServiceInterface,
 } from '../types';
 
 class UserService implements UserServiceInterface {
   async create(data: CreateUserData): Promise<User> {
     try {
       const hashedPassword = await bcrypt.hash(data.password, 12);
-      
+
       const user = await prisma.user.create({
         data: {
           email: data.email,
           username: data.username,
           passwordHash: hashedPassword,
-          displayName: data.displayName || data.username
-        }
+          displayName: data.displayName || data.username,
+        },
       });
-      
+
       logger.info(`User created: ${data.username}`);
       return user;
-    } catch (error: any) {
-      if (error.code === 'P2002') {
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
         throw new Error('Email or username already exists');
       }
       logger.error('User creation failed:', error);
@@ -37,7 +42,7 @@ class UserService implements UserServiceInterface {
   async findByEmail(email: string): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { email }
+        where: { email },
       });
       return user;
     } catch (error) {
@@ -49,7 +54,7 @@ class UserService implements UserServiceInterface {
   async findByUsername(username: string): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { username }
+        where: { username },
       });
       return user;
     } catch (error) {
@@ -61,7 +66,7 @@ class UserService implements UserServiceInterface {
   async findById(id: number): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { id }
+        where: { id },
       });
       return user;
     } catch (error) {
@@ -80,8 +85,8 @@ class UserService implements UserServiceInterface {
         where: { id: userId },
         data: {
           isOnline,
-          lastSeen: new Date()
-        }
+          lastSeen: new Date(),
+        },
       });
     } catch (error) {
       logger.error('Error updating online status:', error);
@@ -89,7 +94,10 @@ class UserService implements UserServiceInterface {
     }
   }
 
-  async searchUsers(query: string, limit: number = 10): Promise<UserSearchResult[]> {
+  async searchUsers(
+    query: string,
+    limit: number = 10
+  ): Promise<UserSearchResult[]> {
     try {
       const users = await prisma.user.findMany({
         where: {
@@ -97,27 +105,27 @@ class UserService implements UserServiceInterface {
             {
               username: {
                 contains: query,
-                mode: 'insensitive'
-              }
+                mode: 'insensitive',
+              },
             },
             {
               displayName: {
                 contains: query,
-                mode: 'insensitive'
-              }
-            }
-          ]
+                mode: 'insensitive',
+              },
+            },
+          ],
         },
         select: {
           id: true,
           username: true,
           displayName: true,
           avatarUrl: true,
-          isOnline: true
+          isOnline: true,
         },
-        take: limit
+        take: limit,
       });
-      
+
       return users;
     } catch (error) {
       logger.error('Error searching users:', error);
@@ -127,8 +135,8 @@ class UserService implements UserServiceInterface {
 
   async updateProfile(userId: number, data: UpdateUserData): Promise<User> {
     try {
-      const updateData: any = {
-        updatedAt: new Date()
+      const updateData: Partial<User> & { updatedAt: Date } = {
+        updatedAt: new Date(),
       };
 
       if (data.displayName !== undefined) {
@@ -140,7 +148,7 @@ class UserService implements UserServiceInterface {
 
       const user = await prisma.user.update({
         where: { id: userId },
-        data: updateData
+        data: updateData,
       });
 
       return user;

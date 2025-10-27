@@ -14,13 +14,21 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:19006', 'http://localhost:8081'],
-  credentials: true
-}));
-app.use(morgan('combined', { 
-  stream: { write: (message: string) => logger.info(message.trim()) } 
-}));
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+      'http://localhost:3000',
+      'http://localhost:19006',
+      'http://localhost:8081',
+    ],
+    credentials: true,
+  })
+);
+app.use(
+  morgan('combined', {
+    stream: { write: (message: string) => logger.info(message.trim()) },
+  })
+);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -35,14 +43,14 @@ app.use('/api/users', userRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
-  const healthStatus: HealthStatus = { 
-    status: 'healthy', 
+  const healthStatus: HealthStatus = {
+    status: 'healthy',
     service: 'user-service',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0'
+    version: process.env.npm_package_version || '1.0.0',
   };
-  
+
   res.json(healthStatus);
 });
 
@@ -52,9 +60,9 @@ app.get('/metrics', (req: Request, res: Response) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     cpu: process.cpuUsage(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
-  
+
   res.json(metrics);
 });
 
@@ -63,24 +71,24 @@ app.use(errorHandler);
 
 // 404 handler
 app.use('*', (req: Request, res: Response) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Route not found',
     path: req.originalUrl,
-    method: req.method 
+    method: req.method,
   });
 });
 
 // Graceful shutdown
 const gracefulShutdown = async (): Promise<void> => {
   logger.info('Starting graceful shutdown...');
-  
+
   try {
     // Disconnect from database
     await disconnectDatabase();
     logger.info('Database disconnected');
-    
+
     // Other cleanup can go here
-    
+
     process.exit(0);
   } catch (error) {
     logger.error('Error during graceful shutdown:', error);
@@ -95,24 +103,27 @@ process.on('SIGINT', gracefulShutdown);
 const startServer = async (): Promise<void> => {
   try {
     logger.info('Starting User Service...');
-    logger.info(`DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
-    logger.info(`JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`);
+    logger.info(
+      `DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`
+    );
+    logger.info(
+      `JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`
+    );
     logger.info(`PORT: ${PORT}`);
-    
+
     // Initialize database first (like message-service)
     await initializeDatabase();
     logger.info('Database initialized successfully');
-    
-    const server = app.listen(PORT, '0.0.0.0', () => {
+
+    app.listen(PORT, '0.0.0.0', () => {
       logger.info(`User Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
-    
+
     // Add periodic health logging
     setInterval(() => {
       logger.info(`Service health check - uptime: ${process.uptime()}s`);
     }, 30000);
-    
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

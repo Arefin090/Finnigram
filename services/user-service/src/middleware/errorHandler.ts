@@ -7,21 +7,26 @@ interface ErrorWithCode extends Error {
   details?: Array<{ message: string }>;
 }
 
-const errorHandler = (error: ErrorWithCode, req: Request, res: Response, next: NextFunction): void => {
+const errorHandler = (
+  error: ErrorWithCode,
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): void => {
   logger.error('Error occurred:', {
     error: error.message,
     stack: error.stack,
     method: req.method,
     url: req.url,
     body: req.body,
-    ip: req.ip
+    ip: req.ip,
   });
 
   // Validation errors
   if (error.name === 'ValidationError') {
     const apiError: ApiError = {
       error: 'Validation failed',
-      details: error.details?.map(detail => detail.message) || [error.message]
+      details: error.details?.map(detail => detail.message) || [error.message],
     };
     res.status(400).json(apiError);
     return;
@@ -67,9 +72,9 @@ const errorHandler = (error: ErrorWithCode, req: Request, res: Response, next: N
 
   // Default server error
   const apiError: ApiError = {
-    error: error.message
+    error: error.message,
   };
-  
+
   res.status(500).json(apiError);
 };
 
