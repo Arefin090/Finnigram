@@ -1,1 +1,19 @@
-npx lint-staged
+#!/bin/sh
+echo "🔍 Running pre-commit checks..."
+
+if ! npx lint-staged; then
+  echo ""
+  echo "❌ Pre-commit checks failed!"
+  echo ""
+  echo "🛠️  To fix all issues, run:"
+  echo "   npm run fix"
+  echo ""
+  echo "🎯 Or fix specific parts:"
+  echo "   npm run fix:services  (backend services only)"
+  echo "   npm run fix:mobile    (mobile app only)"
+  echo ""
+  echo "Then commit again."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
