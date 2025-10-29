@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ChatProvider } from './src/context/ChatContext';
 import { ThemeProvider } from './src/context/ThemeContext';
+import { initializeLogging } from './src/services/loggerConfig';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -104,6 +105,11 @@ const AppNavigator = () => {
 
 // Main App Component
 export default function App() {
+  useEffect(() => {
+    // Initialize logging system on app startup
+    initializeLogging();
+  }, []);
+
   return (
     <AuthProvider>
       <AppNavigator />

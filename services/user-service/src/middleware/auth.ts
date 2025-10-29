@@ -1,22 +1,30 @@
 import jwt from 'jsonwebtoken';
 import { Response, NextFunction } from 'express';
 import UserService from '../services/UserService';
+import { tokenBlacklistService } from '../services/TokenBlacklistService';
 import logger from '../utils/logger';
 import { JWTPayload, TokenPair, AuthenticatedRequest } from '../types';
 
-export const generateTokens = (userId: number): TokenPair => {
+export const generateTokens = async (userId: number): Promise<TokenPair> => {
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
     throw new Error('JWT_SECRET environment variable is required');
   }
 
-  const accessToken = jwt.sign({ userId }, jwtSecret, {
+  // Generate unique JTI (JWT ID) for tracking
+  const crypto = await import('crypto');
+  const jti = crypto.randomBytes(16).toString('hex');
+
+  const accessToken = jwt.sign({ userId, jti }, jwtSecret, {
     expiresIn: '15m',
   });
 
-  const refreshToken = jwt.sign({ userId }, jwtSecret, {
+  const refreshToken = jwt.sign({ userId, jti: jti + '_refresh' }, jwtSecret, {
     expiresIn: '7d',
   });
+
+  // Track this session
+  tokenBlacklistService.addToUserSessions(userId, jti);
 
   return { accessToken, refreshToken };
 };
@@ -35,11 +43,21 @@ export const verifyToken = async (
     }
 
     const token = authHeader.substring(7);
+
+    // Check if token is blacklisted
+    const isBlacklisted = await tokenBlacklistService.isTokenBlacklisted(token);
+    if (isBlacklisted) {
+      logger.warn('Attempted use of blacklisted token');
+      res.status(401).json({ error: 'Token has been revoked' });
+      return;
+    }
+
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       res.status(500).json({ error: 'Server configuration error' });
       return;
     }
+
     const decoded = jwt.verify(token, jwtSecret) as JWTPayload;
 
     const user = await UserService.findById(decoded.userId);
@@ -48,6 +66,8 @@ export const verifyToken = async (
       return;
     }
 
+    // Store token in request for potential blacklisting
+    req.token = token;
     req.user = user;
     next();
   } catch (error: unknown) {
@@ -88,7 +108,7 @@ export const optionalAuth = async (
     }
 
     next();
-  } catch (_error) {
+  } catch {
     // Continue without authentication for optional auth
     next();
   }

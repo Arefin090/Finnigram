@@ -12,7 +12,7 @@ class SocketService {
   async connect() {
     try {
       const token = await AsyncStorage.getItem('accessToken');
-      
+
       if (!token) {
         throw new Error('No access token found');
       }
@@ -27,21 +27,21 @@ class SocketService {
       });
 
       this.setupEventHandlers();
-      
+
       return new Promise((resolve, reject) => {
-        this.socket.on('connected', (data) => {
+        this.socket.on('connected', data => {
           this.isConnected = true;
           console.log('Socket connected:', data);
           resolve(data);
         });
 
-        this.socket.on('connect_error', (error) => {
+        this.socket.on('connect_error', error => {
           console.error('Socket connection error:', error);
           this.isConnected = false;
           reject(error);
         });
 
-        this.socket.on('disconnect', (reason) => {
+        this.socket.on('disconnect', reason => {
           console.log('Socket disconnected:', reason);
           this.isConnected = false;
         });
@@ -76,10 +76,17 @@ class SocketService {
 
   disconnect() {
     if (this.socket) {
+      // Emit user_offline before disconnecting if still connected
+      if (this.isConnected) {
+        console.log('Emitting user_offline before disconnect...');
+        this.socket.emit('user_offline');
+      }
+
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
       this.listeners.clear();
+      console.log('Socket disconnected and cleaned up');
     }
   }
 
