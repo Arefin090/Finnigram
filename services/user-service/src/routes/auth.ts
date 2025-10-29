@@ -1,7 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import UserService from '../services/UserService';
+import { tokenBlacklistService } from '../services/TokenBlacklistService';
+import { auditLogger } from '../services/AuditLogger';
 import { generateTokens, verifyToken } from '../middleware/auth';
+import { authRateLimiter, logoutRateLimiter } from '../middleware/rateLimiter';
 import {
   validateRequest,
   registerSchema,
@@ -50,7 +53,7 @@ router.post(
       });
 
       // Generate tokens
-      const tokens = generateTokens(user.id);
+      const tokens = await generateTokens(user.id);
 
       logger.info(`User registered successfully: ${username}`);
 
@@ -75,6 +78,7 @@ router.post(
 // Login user
 router.post(
   '/login',
+  authRateLimiter.middleware(),
   validateRequest(loginSchema),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -101,7 +105,7 @@ router.post(
       await UserService.updateOnlineStatus(user.id, true);
 
       // Generate tokens
-      const tokens = generateTokens(user.id);
+      const tokens = await generateTokens(user.id);
 
       logger.info(`User logged in: ${user.username}`);
 
@@ -151,7 +155,7 @@ router.post(
       }
 
       // Generate new tokens
-      const tokens = generateTokens(user.id);
+      const tokens = await generateTokens(user.id);
 
       const response: RefreshTokenResponse = {
         message: 'Token refreshed successfully',
@@ -168,6 +172,7 @@ router.post(
 // Logout
 router.post(
   '/logout',
+  logoutRateLimiter.middleware(),
   verifyToken,
   async (
     req: AuthenticatedRequest,
@@ -175,15 +180,42 @@ router.post(
     next: NextFunction
   ): Promise<void> => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.token) {
         res.status(401).json({ error: 'User not authenticated' });
         return;
       }
 
+      const startTime = Date.now();
+      const correlationId = auditLogger.generateCorrelationId();
+
+      // Blacklist the current token
+      const blacklistSuccess = await tokenBlacklistService.blacklistToken(
+        req.token,
+        'logout'
+      );
+
       // Update online status
       await UserService.updateOnlineStatus(req.user.id, false);
 
-      logger.info(`User logged out: ${req.user.username}`);
+      const duration = Date.now() - startTime;
+
+      // Comprehensive audit logging
+      await auditLogger.logLogout(
+        req.user.id,
+        req.user.username,
+        true,
+        {
+          tokenBlacklisted: blacklistSuccess,
+          socketDisconnected: false, // Will be updated by socket service
+          duration,
+          reason: 'user_initiated',
+        },
+        {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          correlationId,
+        }
+      );
 
       const response: LogoutResponse = {
         message: 'Logout successful',
@@ -191,6 +223,30 @@ router.post(
 
       res.json(response);
     } catch (error) {
+      // Log failed logout attempt
+      if (req.user) {
+        await auditLogger.logLogout(
+          req.user.id,
+          req.user.username,
+          false,
+          {
+            reason: 'user_initiated',
+          },
+          {
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+          }
+        );
+      }
+
+      logger.error('Logout error:', {
+        userId: req.user?.id,
+        username: req.user?.username,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+        action: 'logout',
+        success: false,
+      });
       next(error);
     }
   }
