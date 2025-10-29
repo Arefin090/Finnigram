@@ -1,91 +1,56 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import ConversationService from '../services/ConversationService';
 import { verifyToken } from '../middleware/auth';
-import { publishMessage } from '../utils/redis';
+import {
+  publishMessage,
+  getCachedUserConversations,
+  cacheUserConversations,
+} from '../utils/redis';
 import logger from '../utils/logger';
-import { CreateConversationRequest, ApiResponse, User } from '../types';
-import { PrismaClient } from '@prisma/client';
+import { CreateConversationRequest, ApiResponse } from '../types';
 
 const router = Router();
 const conversationService = new ConversationService();
-const prisma = new PrismaClient();
 
 // Get user's conversations
 router.get(
   '/',
   verifyToken,
   async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    const startTime = Date.now();
+
     try {
       const userId = req.user.id;
 
-      // Get conversations with participant data - matching original complex query
-      const conversationsResult = await prisma.$queryRaw<
-        Array<{
-          id: number;
-          name: string;
-          type: string;
-          description: string;
-          created_at: Date;
-          updated_at: Date;
-          last_read_at: Date | null;
-        }>
-      >`
-      SELECT c.*, cp.last_read_at
-      FROM conversations c
-      JOIN conversation_participants cp ON c.id = cp.conversation_id
-      WHERE cp.user_id = ${userId}
-      ORDER BY c.created_at DESC
-    `;
+      // Check cache first for instant loading
+      const cachedConversations = await getCachedUserConversations(userId);
+      if (cachedConversations) {
+        const responseTime = Date.now() - startTime;
+        logger.info(
+          `[PERF] Cached conversations returned for user ${userId} in ${responseTime}ms (${cachedConversations.length} conversations)`
+        );
+        res.json({ conversations: cachedConversations });
+        return;
+      }
 
-      // For each conversation, get participant details and latest message
-      const conversationsWithParticipants = await Promise.all(
-        conversationsResult.map(async conversation => {
-          const participantsResult = await prisma.$queryRaw<User[]>`
-          SELECT u.id as user_id, u.username, u.display_name, u.email
-          FROM users u
-          JOIN conversation_participants cp ON u.id = cp.user_id
-          WHERE cp.conversation_id = ${conversation.id}
-        `;
+      // Use the optimized ConversationService method (already handles N+1 query problem)
+      const conversationsWithParticipants =
+        await conversationService.getConversationsWithParticipants(userId);
 
-          // Get the latest message for preview
-          const latestMessageResult = await prisma.$queryRaw<
-            Array<{
-              content: string;
-              created_at: Date;
-            }>
-          >`
-          SELECT content, created_at
-          FROM messages
-          WHERE conversation_id = ${conversation.id}
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
+      // Cache the results for future requests
+      await cacheUserConversations(userId, conversationsWithParticipants);
 
-          const latestMessage = latestMessageResult[0];
-
-          return {
-            ...conversation,
-            participants: participantsResult,
-            last_message: latestMessage?.content || null,
-            last_message_at:
-              latestMessage?.created_at || conversation.created_at,
-          };
-        })
-      );
-
-      // Sort conversations by last message time (most recent first)
-      conversationsWithParticipants.sort(
-        (a, b) =>
-          new Date(b.last_message_at).getTime() -
-          new Date(a.last_message_at).getTime()
-      );
-
+      const responseTime = Date.now() - startTime;
       logger.info(
-        `Fetched ${conversationsWithParticipants.length} conversations for user ${userId}`
+        `[PERF] Database query completed for user ${userId} in ${responseTime}ms (${conversationsWithParticipants.length} conversations, cached for future)`
       );
       res.json({ conversations: conversationsWithParticipants });
     } catch (error) {
-      logger.error('Error in GET /conversations:', error);
+      const responseTime = Date.now() - startTime;
+      logger.error(
+        `[PERF] Conversations query failed for user ${req.user?.id || 'unknown'} after ${responseTime}ms:`,
+        error
+      );
       res
         .status(500)
         .json({ error: 'Database error', details: (error as Error).message });
@@ -128,20 +93,8 @@ router.post(
             participants[0]
           );
         if (existingConversation) {
-          // Get the existing conversation with participant data
-          const participantsResult = await prisma.$queryRaw<User[]>`
-          SELECT u.id as user_id, u.username, u.display_name, u.email
-          FROM users u
-          JOIN conversation_participants cp ON u.id = cp.user_id
-          WHERE cp.conversation_id = ${existingConversation.id}
-        `;
-
-          const conversationWithParticipants = {
-            ...existingConversation,
-            participants: participantsResult,
-          };
-
-          res.json({ conversation: conversationWithParticipants });
+          // Return the existing conversation (participants will be empty as per ConversationService design)
+          res.json({ conversation: existingConversation });
           return;
         }
       }
@@ -154,18 +107,9 @@ router.post(
         participants: [...participants, createdBy],
       });
 
-      // Get the conversation with participant data for real-time sync
-      const participantsResult = await prisma.$queryRaw<User[]>`
-      SELECT u.id as user_id, u.username, u.display_name, u.email
-      FROM users u
-      JOIN conversation_participants cp ON u.id = cp.user_id
-      WHERE cp.conversation_id = ${conversation.id}
-    `;
-
-      const conversationWithParticipants = {
-        ...conversation,
-        participants: participantsResult,
-      };
+      // Note: participants array will be empty as per ConversationService design
+      // Frontend should handle fetching user details separately if needed
+      const conversationWithParticipants = conversation;
 
       // Broadcast to all participants via Redis
       try {
