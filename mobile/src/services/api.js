@@ -1,6 +1,10 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { USER_SERVICE_URL, MESSAGE_SERVICE_URL, REALTIME_SERVICE_URL } from '../config/environment';
+import {
+  USER_SERVICE_URL,
+  MESSAGE_SERVICE_URL,
+  REALTIME_SERVICE_URL,
+} from '../config/environment';
 
 // Create axios instances for each service
 const userApi = axios.create({
@@ -14,47 +18,54 @@ const messageApi = axios.create({
 });
 
 // Request interceptors to add auth tokens
-const addAuthInterceptor = (apiInstance) => {
+const addAuthInterceptor = apiInstance => {
   apiInstance.interceptors.request.use(
-    async (config) => {
+    async config => {
       const token = await AsyncStorage.getItem('accessToken');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
     },
-    (error) => Promise.reject(error)
+    error => Promise.reject(error)
   );
 };
 
 // Response interceptors to handle token refresh
-const addResponseInterceptor = (apiInstance) => {
+const addResponseInterceptor = apiInstance => {
   apiInstance.interceptors.response.use(
-    (response) => response,
-    async (error) => {
+    response => response,
+    async error => {
       const originalRequest = error.config;
-      
+
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;
-        
+
         try {
           const refreshToken = await AsyncStorage.getItem('refreshToken');
           if (refreshToken) {
-            const response = await userApi.post('/auth/refresh', { refreshToken });
-            const { accessToken, refreshToken: newRefreshToken } = response.data.tokens;
-            
+            const response = await userApi.post('/auth/refresh', {
+              refreshToken,
+            });
+            const { accessToken, refreshToken: newRefreshToken } =
+              response.data.tokens;
+
             await AsyncStorage.setItem('accessToken', accessToken);
             await AsyncStorage.setItem('refreshToken', newRefreshToken);
-            
+
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return apiInstance(originalRequest);
           }
         } catch (refreshError) {
           // Refresh failed, redirect to login
-          await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+          await AsyncStorage.multiRemove([
+            'accessToken',
+            'refreshToken',
+            'user',
+          ]);
         }
       }
-      
+
       return Promise.reject(error);
     }
   );
@@ -69,38 +80,49 @@ addResponseInterceptor(messageApi);
 // Auth API
 export const authApi = {
   login: (email, password) => userApi.post('/auth/login', { email, password }),
-  register: (email, username, password, displayName) => 
+  register: (email, username, password, displayName) =>
     userApi.post('/auth/register', { email, username, password, displayName }),
-  logout: () => userApi.post('/auth/logout'),
+  logout: () => userApi.post('/auth/logout', {}, { timeout: 5000 }), // 5 second timeout
   getCurrentUser: () => userApi.get('/auth/me'),
-  refreshToken: (refreshToken) => userApi.post('/auth/refresh', { refreshToken }),
+  refreshToken: refreshToken => userApi.post('/auth/refresh', { refreshToken }),
 };
 
 // User API
 export const userApiExports = {
-  getProfile: (userId) => userApi.get(`/users/${userId}`),
-  updateProfile: (data) => userApi.patch('/users/me', data),
-  searchUsers: (query, limit = 10) => userApi.get('/users', { params: { q: query, limit } }),
+  getProfile: userId => userApi.get(`/users/${userId}`),
+  updateProfile: data => userApi.patch('/users/me', data),
+  searchUsers: (query, limit = 10) =>
+    userApi.get('/users', { params: { q: query, limit } }),
 };
 
 // Message API
 export const messageApiExports = {
   getConversations: () => messageApi.get('/conversations'),
-  createConversation: (data) => messageApi.post('/conversations', data),
-  getConversation: (id) => messageApi.get(`/conversations/${id}`),
-  addParticipant: (conversationId, userId) => 
-    messageApi.post(`/conversations/${conversationId}/participants`, { userId }),
-  removeParticipant: (conversationId, userId) => 
-    messageApi.delete(`/conversations/${conversationId}/participants/${userId}`),
-  markAsRead: (conversationId) => messageApi.patch(`/conversations/${conversationId}/read`),
-  markMessageAsDelivered: (messageId) => messageApi.patch(`/messages/${messageId}/delivered`),
-  markMessageAsRead: (messageId) => messageApi.patch(`/messages/${messageId}/read`),
-  getMessages: (conversationId, limit = 50, offset = 0) => 
-    messageApi.get(`/messages/conversations/${conversationId}`, { params: { limit, offset } }),
-  sendMessage: (data) => messageApi.post('/messages', data),
-  editMessage: (messageId, content) => messageApi.patch(`/messages/${messageId}`, { content }),
-  deleteMessage: (messageId) => messageApi.delete(`/messages/${messageId}`),
-  searchMessages: (query, limit = 20) => 
+  createConversation: data => messageApi.post('/conversations', data),
+  getConversation: id => messageApi.get(`/conversations/${id}`),
+  addParticipant: (conversationId, userId) =>
+    messageApi.post(`/conversations/${conversationId}/participants`, {
+      userId,
+    }),
+  removeParticipant: (conversationId, userId) =>
+    messageApi.delete(
+      `/conversations/${conversationId}/participants/${userId}`
+    ),
+  markAsRead: conversationId =>
+    messageApi.patch(`/conversations/${conversationId}/read`),
+  markMessageAsDelivered: messageId =>
+    messageApi.patch(`/messages/${messageId}/delivered`),
+  markMessageAsRead: messageId =>
+    messageApi.patch(`/messages/${messageId}/read`),
+  getMessages: (conversationId, limit = 50, offset = 0) =>
+    messageApi.get(`/messages/conversations/${conversationId}`, {
+      params: { limit, offset },
+    }),
+  sendMessage: data => messageApi.post('/messages', data),
+  editMessage: (messageId, content) =>
+    messageApi.patch(`/messages/${messageId}`, { content }),
+  deleteMessage: messageId => messageApi.delete(`/messages/${messageId}`),
+  searchMessages: (query, limit = 20) =>
     messageApi.get('/messages/search', { params: { q: query, limit } }),
 };
 
