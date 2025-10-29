@@ -30,16 +30,19 @@ interface SecurityEvent extends AuditEvent {
 
 class AuditLogger {
   private redis: RedisClientType | null = null;
+  private redisInitialized = false;
   private readonly AUDIT_LOG_KEY = 'audit_logs';
   private readonly SECURITY_LOG_KEY = 'security_logs';
   private readonly USER_ACTIVITY_KEY = 'user_activity';
   private readonly MAX_LOG_ENTRIES = 10000; // Keep last 10k entries
 
   constructor() {
-    this.initRedis();
+    // Don't initialize Redis in constructor to avoid blocking startup
   }
 
-  private async initRedis(): Promise<void> {
+  private async ensureRedisConnection(): Promise<void> {
+    if (this.redisInitialized) return;
+
     try {
       this.redis = createClient({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
@@ -47,12 +50,23 @@ class AuditLogger {
 
       this.redis.on('error', err => {
         logger.error('Redis Client Error in AuditLogger:', err);
+        this.redis = null;
+        this.redisInitialized = false;
+      });
+
+      this.redis.on('disconnect', () => {
+        logger.warn('Redis disconnected in AuditLogger');
+        this.redis = null;
+        this.redisInitialized = false;
       });
 
       await this.redis.connect();
       logger.info('AuditLogger Redis connected');
+      this.redisInitialized = true;
     } catch (error) {
       logger.error('Failed to connect to Redis for AuditLogger:', error);
+      this.redis = null;
+      this.redisInitialized = true; // Don't retry immediately
     }
   }
 
@@ -78,6 +92,7 @@ class AuditLogger {
     logger.info('Audit Event', auditEvent);
 
     // Store in Redis for real-time querying
+    await this.ensureRedisConnection();
     if (this.redis) {
       try {
         const pipeline = this.redis.multi();
@@ -125,6 +140,7 @@ class AuditLogger {
     logger[logLevel]('Security Event', securityEvent);
 
     // Store in Redis
+    await this.ensureRedisConnection();
     if (this.redis) {
       try {
         const pipeline = this.redis.multi();
