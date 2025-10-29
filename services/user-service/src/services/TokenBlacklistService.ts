@@ -20,11 +20,14 @@ interface BlacklistEntry {
 class TokenBlacklistService {
   private redis: RedisClientType | null = null;
   private redisInitialized = false;
+  private redisAvailable = false;
+  private inMemoryBlacklist = new Set<string>();
   private readonly BLACKLIST_PREFIX = 'token_blacklist:';
   private readonly USER_SESSIONS_PREFIX = 'user_sessions:';
 
   constructor() {
-    // Don't initialize Redis in constructor to avoid blocking startup
+    // No Redis initialization in constructor - services must start without external dependencies
+    logger.info('TokenBlacklistService initialized (Redis lazy-loaded)');
   }
 
   private async ensureRedisConnection(): Promise<void> {
@@ -33,29 +36,37 @@ class TokenBlacklistService {
     try {
       this.redis = createClient({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
+        socket: {
+          connectTimeout: 5000,
+          lazyConnect: true,
+        },
       });
 
       this.redis.on('error', err => {
-        logger.error('Redis Client Error in TokenBlacklistService:', err);
-        this.redis = null; // Reset connection on error
-        this.redisInitialized = false;
+        logger.warn('Redis Client Error in TokenBlacklistService:', err);
+        this.redisAvailable = false;
       });
 
       this.redis.on('disconnect', () => {
-        logger.warn('Redis disconnected in TokenBlacklistService');
-        this.redis = null;
-        this.redisInitialized = false;
+        logger.info('Redis disconnected in TokenBlacklistService');
+        this.redisAvailable = false;
+      });
+
+      this.redis.on('connect', () => {
+        logger.info('TokenBlacklistService Redis connected');
+        this.redisAvailable = true;
       });
 
       await this.redis.connect();
-      logger.info('TokenBlacklistService Redis connected');
+      this.redisAvailable = true;
       this.redisInitialized = true;
     } catch (error) {
-      logger.error(
-        'Failed to connect to Redis for TokenBlacklistService:',
+      logger.warn(
+        'Redis unavailable for TokenBlacklistService, using in-memory fallback:',
         error
       );
-      this.redis = null; // Ensure service continues without Redis
+      this.redis = null;
+      this.redisAvailable = false;
       this.redisInitialized = true; // Don't retry immediately
     }
   }
@@ -67,13 +78,6 @@ class TokenBlacklistService {
     token: string,
     reason: BlacklistEntry['reason'] = 'logout'
   ): Promise<boolean> {
-    await this.ensureRedisConnection();
-
-    if (!this.redis) {
-      logger.warn('Redis not available for token blacklisting');
-      return false;
-    }
-
     try {
       const decoded = jwt.decode(token) as TokenPayload;
       if (!decoded) {
@@ -82,28 +86,46 @@ class TokenBlacklistService {
       }
 
       const tokenId = decoded.jti || (await this.generateTokenId(token));
-      const blacklistEntry: BlacklistEntry = {
-        tokenId,
-        userId: decoded.userId,
-        blacklistedAt: Date.now(),
-        expiresAt: decoded.exp * 1000, // Convert to milliseconds
-        reason,
-      };
 
-      // Store in blacklist with TTL matching token expiration
-      const ttl = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
-      await this.redis.setEx(
-        `${this.BLACKLIST_PREFIX}${tokenId}`,
-        ttl,
-        JSON.stringify(blacklistEntry)
-      );
+      // Always add to in-memory blacklist as fallback
+      this.inMemoryBlacklist.add(tokenId);
 
-      // Remove from user active sessions
-      await this.removeFromUserSessions(decoded.userId, tokenId);
+      // Try Redis if available
+      await this.ensureRedisConnection();
+      if (this.redis && this.redisAvailable) {
+        try {
+          const blacklistEntry: BlacklistEntry = {
+            tokenId,
+            userId: decoded.userId,
+            blacklistedAt: Date.now(),
+            expiresAt: decoded.exp * 1000,
+            reason,
+          };
 
-      logger.info(
-        `Token blacklisted: ${tokenId} for user ${decoded.userId}, reason: ${reason}`
-      );
+          const ttl = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
+          await this.redis.setEx(
+            `${this.BLACKLIST_PREFIX}${tokenId}`,
+            ttl,
+            JSON.stringify(blacklistEntry)
+          );
+
+          await this.removeFromUserSessions(decoded.userId, tokenId);
+          logger.info(
+            `Token blacklisted in Redis: ${tokenId} for user ${decoded.userId}, reason: ${reason}`
+          );
+        } catch (redisError) {
+          logger.warn(
+            'Redis blacklisting failed, using in-memory only:',
+            redisError
+          );
+          this.redisAvailable = false;
+        }
+      } else {
+        logger.info(
+          `Token blacklisted in memory only: ${tokenId} for user ${decoded.userId}, reason: ${reason}`
+        );
+      }
+
       return true;
     } catch (error) {
       logger.error('Error blacklisting token:', error);
@@ -115,12 +137,6 @@ class TokenBlacklistService {
    * Check if a token is blacklisted
    */
   async isTokenBlacklisted(token: string): Promise<boolean> {
-    await this.ensureRedisConnection();
-
-    if (!this.redis) {
-      return false; // Fail open if Redis unavailable
-    }
-
     try {
       const decoded = jwt.decode(token) as TokenPayload;
       if (!decoded) {
@@ -128,11 +144,34 @@ class TokenBlacklistService {
       }
 
       const tokenId = decoded.jti || (await this.generateTokenId(token));
-      const blacklistEntry = await this.redis.get(
-        `${this.BLACKLIST_PREFIX}${tokenId}`
-      );
 
-      return blacklistEntry !== null;
+      // Check in-memory first (fastest)
+      if (this.inMemoryBlacklist.has(tokenId)) {
+        return true;
+      }
+
+      // Try Redis if available
+      await this.ensureRedisConnection();
+      if (this.redis && this.redisAvailable) {
+        try {
+          const blacklistEntry = await this.redis.get(
+            `${this.BLACKLIST_PREFIX}${tokenId}`
+          );
+          if (blacklistEntry !== null) {
+            // Sync to in-memory for future fast lookups
+            this.inMemoryBlacklist.add(tokenId);
+            return true;
+          }
+        } catch (redisError) {
+          logger.warn(
+            'Redis blacklist check failed, using in-memory only:',
+            redisError
+          );
+          this.redisAvailable = false;
+        }
+      }
+
+      return false; // Not found in either store
     } catch (error) {
       logger.error('Error checking token blacklist:', error);
       return false; // Fail open on error
@@ -148,8 +187,12 @@ class TokenBlacklistService {
     deviceInfo?: string
   ): Promise<void> {
     await this.ensureRedisConnection();
-
-    if (!this.redis) return;
+    if (!this.redis || !this.redisAvailable) {
+      logger.info(
+        `Session tracking unavailable for user ${userId} (Redis not available)`
+      );
+      return;
+    }
 
     try {
       const sessionInfo = {
@@ -165,10 +208,11 @@ class TokenBlacklistService {
         JSON.stringify(sessionInfo)
       );
 
-      // Set expiration for the entire hash (24 hours)
       await this.redis.expire(`${this.USER_SESSIONS_PREFIX}${userId}`, 86400);
+      logger.debug(`Session tracked for user ${userId}: ${tokenId}`);
     } catch (error) {
-      logger.error('Error adding to user sessions:', error);
+      logger.warn('Error adding to user sessions:', error);
+      this.redisAvailable = false;
     }
   }
 
@@ -176,12 +220,14 @@ class TokenBlacklistService {
    * Remove session from user's active sessions
    */
   async removeFromUserSessions(userId: number, tokenId: string): Promise<void> {
-    if (!this.redis) return;
+    if (!this.redis || !this.redisAvailable) return;
 
     try {
       await this.redis.hDel(`${this.USER_SESSIONS_PREFIX}${userId}`, tokenId);
+      logger.debug(`Session removed for user ${userId}: ${tokenId}`);
     } catch (error) {
-      logger.error('Error removing from user sessions:', error);
+      logger.warn('Error removing from user sessions:', error);
+      this.redisAvailable = false;
     }
   }
 
@@ -191,7 +237,8 @@ class TokenBlacklistService {
   async getUserActiveSessions(
     userId: number
   ): Promise<{ tokenId: string; [key: string]: unknown }[]> {
-    if (!this.redis) return [];
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) return [];
 
     try {
       const sessions = await this.redis.hGetAll(
@@ -202,7 +249,8 @@ class TokenBlacklistService {
         ...JSON.parse(data),
       }));
     } catch (error) {
-      logger.error('Error getting user active sessions:', error);
+      logger.warn('Error getting user active sessions:', error);
+      this.redisAvailable = false;
       return [];
     }
   }
@@ -214,7 +262,13 @@ class TokenBlacklistService {
     userId: number,
     _reason: BlacklistEntry['reason'] = 'logout'
   ): Promise<number> {
-    if (!this.redis) return 0;
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info(
+        `Bulk token blacklisting unavailable for user ${userId} (Redis not available)`
+      );
+      return 0;
+    }
 
     try {
       const sessions = await this.getUserActiveSessions(userId);
@@ -235,7 +289,8 @@ class TokenBlacklistService {
       logger.info(`Blacklisted ${blacklistedCount} tokens for user ${userId}`);
       return blacklistedCount;
     } catch (error) {
-      logger.error('Error blacklisting all user tokens:', error);
+      logger.warn('Error blacklisting all user tokens:', error);
+      this.redisAvailable = false;
       return 0;
     }
   }
@@ -256,7 +311,11 @@ class TokenBlacklistService {
    * Cleanup expired blacklist entries (maintenance)
    */
   async cleanupExpiredEntries(): Promise<number> {
-    if (!this.redis) return 0;
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info('Blacklist cleanup unavailable (Redis not available)');
+      return 0;
+    }
 
     try {
       const pattern = `${this.BLACKLIST_PREFIX}*`;
@@ -274,7 +333,8 @@ class TokenBlacklistService {
       logger.info(`Cleaned up ${cleanedCount} expired blacklist entries`);
       return cleanedCount;
     } catch (error) {
-      logger.error('Error cleaning up expired entries:', error);
+      logger.warn('Error cleaning up expired entries:', error);
+      this.redisAvailable = false;
       return 0;
     }
   }
@@ -287,8 +347,14 @@ class TokenBlacklistService {
     activeUsers: number;
     totalSessions: number;
   }> {
-    if (!this.redis) {
-      return { totalBlacklisted: 0, activeUsers: 0, totalSessions: 0 };
+    await this.ensureRedisConnection();
+
+    if (!this.redis || !this.redisAvailable) {
+      return {
+        totalBlacklisted: this.inMemoryBlacklist.size,
+        activeUsers: 0,
+        totalSessions: 0,
+      };
     }
 
     try {
@@ -304,13 +370,18 @@ class TokenBlacklistService {
       }
 
       return {
-        totalBlacklisted: blacklistKeys.length,
+        totalBlacklisted: blacklistKeys.length + this.inMemoryBlacklist.size,
         activeUsers: sessionKeys.length,
         totalSessions,
       };
     } catch (error) {
-      logger.error('Error getting blacklist stats:', error);
-      return { totalBlacklisted: 0, activeUsers: 0, totalSessions: 0 };
+      logger.warn('Error getting blacklist stats:', error);
+      this.redisAvailable = false;
+      return {
+        totalBlacklisted: this.inMemoryBlacklist.size,
+        activeUsers: 0,
+        totalSessions: 0,
+      };
     }
   }
 
@@ -319,9 +390,14 @@ class TokenBlacklistService {
    */
   async disconnect(): Promise<void> {
     if (this.redis) {
-      await this.redis.disconnect();
-      logger.info('TokenBlacklistService Redis disconnected');
+      try {
+        await this.redis.disconnect();
+        logger.info('TokenBlacklistService Redis disconnected');
+      } catch (error) {
+        logger.warn('Error disconnecting Redis:', error);
+      }
     }
+    logger.info('TokenBlacklistService shutdown complete');
   }
 }
 

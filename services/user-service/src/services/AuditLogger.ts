@@ -31,13 +31,15 @@ interface SecurityEvent extends AuditEvent {
 class AuditLogger {
   private redis: RedisClientType | null = null;
   private redisInitialized = false;
+  private redisAvailable = false;
   private readonly AUDIT_LOG_KEY = 'audit_logs';
   private readonly SECURITY_LOG_KEY = 'security_logs';
   private readonly USER_ACTIVITY_KEY = 'user_activity';
   private readonly MAX_LOG_ENTRIES = 10000; // Keep last 10k entries
 
   constructor() {
-    // Don't initialize Redis in constructor to avoid blocking startup
+    // No Redis initialization in constructor - services must start without external dependencies
+    logger.info('AuditLogger initialized (Redis lazy-loaded)');
   }
 
   private async ensureRedisConnection(): Promise<void> {
@@ -46,26 +48,37 @@ class AuditLogger {
     try {
       this.redis = createClient({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
+        socket: {
+          connectTimeout: 5000,
+          lazyConnect: true,
+        },
       });
 
       this.redis.on('error', err => {
-        logger.error('Redis Client Error in AuditLogger:', err);
-        this.redis = null;
-        this.redisInitialized = false;
+        logger.warn('Redis Client Error in AuditLogger:', err);
+        this.redisAvailable = false;
       });
 
       this.redis.on('disconnect', () => {
-        logger.warn('Redis disconnected in AuditLogger');
-        this.redis = null;
-        this.redisInitialized = false;
+        logger.info('Redis disconnected in AuditLogger');
+        this.redisAvailable = false;
+      });
+
+      this.redis.on('connect', () => {
+        logger.info('AuditLogger Redis connected');
+        this.redisAvailable = true;
       });
 
       await this.redis.connect();
-      logger.info('AuditLogger Redis connected');
+      this.redisAvailable = true;
       this.redisInitialized = true;
     } catch (error) {
-      logger.error('Failed to connect to Redis for AuditLogger:', error);
+      logger.warn(
+        'Redis unavailable for AuditLogger, audit events will only be stored in logs:',
+        error
+      );
       this.redis = null;
+      this.redisAvailable = false;
       this.redisInitialized = true; // Don't retry immediately
     }
   }
@@ -88,12 +101,12 @@ class AuditLogger {
       ...event,
     };
 
-    // Log to Winston (for files/console)
+    // Always log to Winston (for files/console) - this works without Redis
     logger.info('Audit Event', auditEvent);
 
-    // Store in Redis for real-time querying
+    // Try to store in Redis for real-time querying if available
     await this.ensureRedisConnection();
-    if (this.redis) {
+    if (this.redis && this.redisAvailable) {
       try {
         const pipeline = this.redis.multi();
 
@@ -110,8 +123,13 @@ class AuditLogger {
         }
 
         await pipeline.exec();
+        logger.debug('Audit event stored in Redis');
       } catch (error) {
-        logger.error('Failed to store audit event in Redis:', error);
+        logger.warn(
+          'Failed to store audit event in Redis (continuing with file logging):',
+          error
+        );
+        this.redisAvailable = false;
       }
     }
   }
@@ -129,7 +147,7 @@ class AuditLogger {
       ...event,
     };
 
-    // Log to Winston with higher severity
+    // Always log to Winston with higher severity - this works without Redis
     const logLevel =
       event.threatLevel === 'critical'
         ? 'error'
@@ -139,9 +157,9 @@ class AuditLogger {
 
     logger[logLevel]('Security Event', securityEvent);
 
-    // Store in Redis
+    // Try to store in Redis if available
     await this.ensureRedisConnection();
-    if (this.redis) {
+    if (this.redis && this.redisAvailable) {
       try {
         const pipeline = this.redis.multi();
 
@@ -159,8 +177,13 @@ class AuditLogger {
         }
 
         await pipeline.exec();
+        logger.debug('Security event stored in Redis');
       } catch (error) {
-        logger.error('Failed to store security event in Redis:', error);
+        logger.warn(
+          'Failed to store security event in Redis (continuing with file logging):',
+          error
+        );
+        this.redisAvailable = false;
       }
     }
   }
@@ -246,13 +269,18 @@ class AuditLogger {
    * Get recent audit events
    */
   async getRecentEvents(limit: number = 100): Promise<AuditEvent[]> {
-    if (!this.redis) return [];
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info('Audit event retrieval unavailable (Redis not available)');
+      return [];
+    }
 
     try {
       const events = await this.redis.lRange(this.AUDIT_LOG_KEY, 0, limit - 1);
       return events.map(event => JSON.parse(event));
     } catch (error) {
-      logger.error('Error fetching recent audit events:', error);
+      logger.warn('Error fetching recent audit events:', error);
+      this.redisAvailable = false;
       return [];
     }
   }
@@ -264,14 +292,21 @@ class AuditLogger {
     userId: number,
     limit: number = 50
   ): Promise<AuditEvent[]> {
-    if (!this.redis) return [];
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info(
+        `User activity retrieval unavailable for user ${userId} (Redis not available)`
+      );
+      return [];
+    }
 
     try {
       const userKey = `${this.USER_ACTIVITY_KEY}:${userId}`;
       const events = await this.redis.lRange(userKey, 0, limit - 1);
       return events.map(event => JSON.parse(event));
     } catch (error) {
-      logger.error('Error fetching user activity:', error);
+      logger.warn('Error fetching user activity:', error);
+      this.redisAvailable = false;
       return [];
     }
   }
@@ -280,7 +315,11 @@ class AuditLogger {
    * Get security events
    */
   async getSecurityEvents(limit: number = 100): Promise<SecurityEvent[]> {
-    if (!this.redis) return [];
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info('Security event retrieval unavailable (Redis not available)');
+      return [];
+    }
 
     try {
       const events = await this.redis.lRange(
@@ -290,7 +329,8 @@ class AuditLogger {
       );
       return events.map(event => JSON.parse(event));
     } catch (error) {
-      logger.error('Error fetching security events:', error);
+      logger.warn('Error fetching security events:', error);
+      this.redisAvailable = false;
       return [];
     }
   }
@@ -341,7 +381,9 @@ class AuditLogger {
     recentFailures: number;
     topActions: Array<{ action: string; count: number }>;
   }> {
-    if (!this.redis) {
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info('Audit statistics unavailable (Redis not available)');
       return {
         totalEvents: 0,
         securityEvents: 0,
@@ -377,7 +419,8 @@ class AuditLogger {
         topActions,
       };
     } catch (error) {
-      logger.error('Error getting audit stats:', error);
+      logger.warn('Error getting audit stats:', error);
+      this.redisAvailable = false;
       return {
         totalEvents: 0,
         securityEvents: 0,
@@ -391,7 +434,11 @@ class AuditLogger {
    * Cleanup old events (maintenance task)
    */
   async cleanup(): Promise<void> {
-    if (!this.redis) return;
+    await this.ensureRedisConnection();
+    if (!this.redis || !this.redisAvailable) {
+      logger.info('Audit log cleanup unavailable (Redis not available)');
+      return;
+    }
 
     try {
       await Promise.all([
@@ -401,7 +448,8 @@ class AuditLogger {
 
       logger.info('Audit log cleanup completed');
     } catch (error) {
-      logger.error('Error during audit log cleanup:', error);
+      logger.warn('Error during audit log cleanup:', error);
+      this.redisAvailable = false;
     }
   }
 
@@ -410,9 +458,14 @@ class AuditLogger {
    */
   async disconnect(): Promise<void> {
     if (this.redis) {
-      await this.redis.disconnect();
-      logger.info('AuditLogger Redis disconnected');
+      try {
+        await this.redis.disconnect();
+        logger.info('AuditLogger Redis disconnected');
+      } catch (error) {
+        logger.warn('Error disconnecting Redis:', error);
+      }
     }
+    logger.info('AuditLogger shutdown complete');
   }
 }
 
