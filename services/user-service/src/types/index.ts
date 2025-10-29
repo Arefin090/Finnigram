@@ -36,6 +36,7 @@ export interface UserSearchResult {
 // Authentication types
 export interface JWTPayload {
   userId: number;
+  jti?: string; // JWT ID for tracking
   iat?: number;
   exp?: number;
 }
@@ -47,6 +48,7 @@ export interface TokenPair {
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
+  token?: string; // Current token for blacklisting
 }
 
 // API Request/Response types
