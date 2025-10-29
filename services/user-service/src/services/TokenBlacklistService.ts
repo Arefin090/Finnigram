@@ -19,14 +19,17 @@ interface BlacklistEntry {
 
 class TokenBlacklistService {
   private redis: RedisClientType | null = null;
+  private redisInitialized = false;
   private readonly BLACKLIST_PREFIX = 'token_blacklist:';
   private readonly USER_SESSIONS_PREFIX = 'user_sessions:';
 
   constructor() {
-    this.initRedis();
+    // Don't initialize Redis in constructor to avoid blocking startup
   }
 
-  private async initRedis(): Promise<void> {
+  private async ensureRedisConnection(): Promise<void> {
+    if (this.redisInitialized) return;
+
     try {
       this.redis = createClient({
         url: process.env.REDIS_URL || 'redis://localhost:6379',
@@ -34,15 +37,26 @@ class TokenBlacklistService {
 
       this.redis.on('error', err => {
         logger.error('Redis Client Error in TokenBlacklistService:', err);
+        this.redis = null; // Reset connection on error
+        this.redisInitialized = false;
+      });
+
+      this.redis.on('disconnect', () => {
+        logger.warn('Redis disconnected in TokenBlacklistService');
+        this.redis = null;
+        this.redisInitialized = false;
       });
 
       await this.redis.connect();
       logger.info('TokenBlacklistService Redis connected');
+      this.redisInitialized = true;
     } catch (error) {
       logger.error(
         'Failed to connect to Redis for TokenBlacklistService:',
         error
       );
+      this.redis = null; // Ensure service continues without Redis
+      this.redisInitialized = true; // Don't retry immediately
     }
   }
 
@@ -53,6 +67,8 @@ class TokenBlacklistService {
     token: string,
     reason: BlacklistEntry['reason'] = 'logout'
   ): Promise<boolean> {
+    await this.ensureRedisConnection();
+
     if (!this.redis) {
       logger.warn('Redis not available for token blacklisting');
       return false;
@@ -99,6 +115,8 @@ class TokenBlacklistService {
    * Check if a token is blacklisted
    */
   async isTokenBlacklisted(token: string): Promise<boolean> {
+    await this.ensureRedisConnection();
+
     if (!this.redis) {
       return false; // Fail open if Redis unavailable
     }
@@ -129,6 +147,8 @@ class TokenBlacklistService {
     tokenId: string,
     deviceInfo?: string
   ): Promise<void> {
+    await this.ensureRedisConnection();
+
     if (!this.redis) return;
 
     try {
