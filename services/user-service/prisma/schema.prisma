@@ -26,3 +26,17 @@ model User {
   @@index([username])
   @@map("users")
 }
+
+model UserEventOutbox {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  eventType   String   @map("event_type") @db.VarChar(50)
+  eventData   Json     @map("event_data")
+  processed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamp(6)
+
+  @@index([processed, createdAt])
+  @@index([userId])
+  @@map("user_events_outbox")
+}
