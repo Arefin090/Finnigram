@@ -278,6 +278,33 @@ class UserService implements UserServiceInterface {
       throw error;
     }
   }
+
+  async findUsersByIds(userIds: number[]): Promise<User[]> {
+    try {
+      const users = await prisma.user.findMany({
+        where: {
+          id: {
+            in: userIds,
+          },
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          isOnline: true,
+          lastSeen: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return users as User[];
+    } catch (error) {
+      logger.error('Error finding users by IDs:', error);
+      throw error;
+    }
+  }
 }
 
 export default new UserService();

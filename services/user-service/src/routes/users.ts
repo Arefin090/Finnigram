@@ -8,6 +8,8 @@ import {
   UpdateProfileRequest,
   UpdateProfileResponse,
   AuthenticatedRequest,
+  BulkUsersRequest,
+  BulkUsersResponse,
 } from '../types';
 
 const router = express.Router();
@@ -150,6 +152,53 @@ router.patch(
           displayName: updatedUser.displayName,
           avatarUrl: updatedUser.avatarUrl,
         },
+      };
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Bulk fetch users by IDs (for backfill and internal service communication)
+router.post(
+  '/bulk',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { userIds }: BulkUsersRequest = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        res.status(400).json({ error: 'userIds array is required' });
+        return;
+      }
+
+      if (userIds.length > 100) {
+        res.status(400).json({ error: 'Maximum 100 user IDs allowed' });
+        return;
+      }
+
+      // Validate all IDs are numbers
+      const validIds = userIds.filter(id => Number.isInteger(id) && id > 0);
+      if (validIds.length !== userIds.length) {
+        res
+          .status(400)
+          .json({ error: 'All userIds must be positive integers' });
+        return;
+      }
+
+      const users = await UserService.findUsersByIds(validIds);
+
+      const response: BulkUsersResponse = {
+        users: users.map(user => ({
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          isOnline: user.isOnline,
+          lastSeen: user.lastSeen,
+        })),
       };
 
       res.json(response);
