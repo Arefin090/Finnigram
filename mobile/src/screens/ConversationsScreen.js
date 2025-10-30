@@ -129,7 +129,7 @@ const ConversationsScreen = ({ navigation }) => {
       if (conversation.participants && conversation.participants.length > 0) {
         // Find the other participant (not the current user)
         const otherParticipant = conversation.participants.find(
-          p => p.user_id !== user.id && p.user_id !== user.user_id
+          p => p.id !== user.id && p.id !== user.user_id
         );
 
         if (otherParticipant) {
