@@ -66,6 +66,8 @@ model Message {
 
   @@index([conversationId])
   @@index([createdAt(sort: Desc)])
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
   @@map("messages")
 }
 
