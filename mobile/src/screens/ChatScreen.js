@@ -19,11 +19,12 @@ import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { messageApiExports } from '../services/api';
 import socketService from '../services/socket';
+import messageCache from '../utils/messageCache';
 
 const { width } = Dimensions.get('window');
 
 const ChatScreen = ({ route, navigation }) => {
-  const { conversationId, conversationName } = route.params;
+  const { conversationId, conversationName, participants } = route.params;
   const { user } = useAuth();
   const { updateConversationWithSort } = useChat();
 
@@ -32,6 +33,7 @@ const ChatScreen = ({ route, navigation }) => {
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [queuedMessages, setQueuedMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
 
   const flatListRef = useRef(null);
@@ -102,6 +104,14 @@ const ChatScreen = ({ route, navigation }) => {
     loadMessages();
     joinConversation();
     
+    // Listen for socket connection and join room when ready
+    const handleSocketConnect = () => {
+      console.log('🔗 Socket connected, joining conversation room');
+      joinConversation();
+    };
+    
+    socketService.on('connect', handleSocketConnect);
+    
     // AUTO-READ: Mark conversation as read when user opens it
     setTimeout(async () => {
       try {
@@ -113,23 +123,63 @@ const ChatScreen = ({ route, navigation }) => {
     }, 500); // Small delay to ensure messages are loaded first
     
     return () => {
+      socketService.off('connect', handleSocketConnect);
       leaveConversation();
     };
   }, [conversationId]);
 
-  // Load messages from API
+  // Load messages with cache-first strategy
   const loadMessages = async () => {
+    setLoading(true);
+    
     try {
-      console.log('📥 Loading messages from API for conversation:', conversationId);
-      setLoading(true);
+      // 1. Try to load from cache first for instant display
+      console.log('📦 Checking cache for conversation:', conversationId);
+      const cachedMessages = await messageCache.getCachedMessages(conversationId);
       
+      if (cachedMessages && cachedMessages.length > 0) {
+        console.log('⚡ Loaded', cachedMessages.length, 'messages from cache');
+        setMessages(cachedMessages);
+        setLoading(false); // Stop loading immediately with cached data
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 100);
+      }
+      
+      // 2. Fetch fresh data from API in background
+      console.log('📥 Loading fresh messages from API for conversation:', conversationId);
       const response = await messageApiExports.getMessages(conversationId);
-      const loadedMessages = response.data.messages || [];
+      const freshMessages = response.data.messages || [];
       
-      console.log('✅ Loaded', loadedMessages.length, 'messages from API');
-      setMessages(loadedMessages);
+      // 3. Conflict resolution: Compare cached vs fresh data
+      if (cachedMessages && cachedMessages.length > 0) {
+        const cacheMessageIds = new Set(cachedMessages.map(m => m.id));
+        const freshMessageIds = new Set(freshMessages.map(m => m.id));
+        
+        // Check for conflicts (messages that changed or were deleted)
+        const hasConflicts = cachedMessages.length !== freshMessages.length ||
+          !cachedMessages.every(cachedMsg => {
+            const freshMsg = freshMessages.find(m => m.id === cachedMsg.id);
+            return freshMsg && JSON.stringify(cachedMsg) === JSON.stringify(freshMsg);
+          });
+        
+        if (hasConflicts) {
+          console.log('⚠️ Cache conflicts detected, refreshing from API');
+          await messageCache.refreshCacheFromAPI(conversationId, freshMessages);
+        } else {
+          console.log('✅ Cache is up to date');
+          await messageCache.cacheMessages(conversationId, freshMessages);
+        }
+      } else {
+        await messageCache.cacheMessages(conversationId, freshMessages);
+      }
       
-      // Scroll to bottom after messages load
+      setMessages(freshMessages);
+      console.log('✅ Loaded', freshMessages.length, 'fresh messages from API and resolved conflicts');
+      
+      // Scroll to bottom after fresh data loads
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 100);
@@ -139,6 +189,38 @@ const ChatScreen = ({ route, navigation }) => {
       Alert.alert('Error', 'Failed to load messages');
     } finally {
       setLoading(false);
+      
+      // Process queued messages after loading completes
+      if (queuedMessages.length > 0) {
+        console.log('📤 Processing', queuedMessages.length, 'queued messages');
+        
+        // Add queued messages to UI
+        setMessages(prev => [...queuedMessages, ...prev]);
+        
+        // Send each queued message
+        queuedMessages.forEach(async (queuedMsg) => {
+          try {
+            const response = await messageApiExports.sendMessage({
+              conversationId: queuedMsg.conversationId,
+              content: queuedMsg.content,
+              messageType: queuedMsg.messageType
+            });
+            
+            // Remove optimistic message - socket will add the real one
+            setMessages(prev => prev.filter(msg => msg.id !== queuedMsg.id));
+          } catch (error) {
+            console.error('❌ Failed to send queued message:', error);
+            setMessages(prev => prev.map(msg => 
+              msg.id === queuedMsg.id 
+                ? { ...msg, status: 'failed' }
+                : msg
+            ));
+          }
+        });
+        
+        // Clear the queue
+        setQueuedMessages([]);
+      }
     }
   };
 
@@ -150,6 +232,8 @@ const ChatScreen = ({ route, navigation }) => {
       
       // Set up socket listeners for this conversation
       setupSocketListeners();
+    } else {
+      console.log('⏳ Socket not connected yet, will join when ready');
     }
   };
 
@@ -179,6 +263,9 @@ const ChatScreen = ({ route, navigation }) => {
             console.log('⚠️ Message already exists, skipping:', message.id);
             return prevMessages;
           }
+          
+          // Add new message to cache
+          messageCache.addMessageToCache(conversationId, message);
           
           const newMessages = [...prevMessages, message];
           
@@ -286,8 +373,32 @@ const ChatScreen = ({ route, navigation }) => {
     const text = messageText.trim();
     if (!text) return;
 
+    // Create optimistic message
+    const optimisticMessage = {
+      id: `temp_${Date.now()}`, // Temporary ID
+      content: text,
+      sender_id: user.id,
+      conversation_id: conversationId,
+      message_type: 'text',
+      created_at: new Date().toISOString(),
+      status: 'sending', // Custom status for UI
+      attachments: [],
+      delivered_at: null,
+      read_at: null,
+    };
+
+    // If still loading, queue the message; otherwise send immediately
+    if (loading) {
+      setQueuedMessages(prev => [...prev, optimisticMessage]);
+      setMessageText('');
+      return;
+    }
+
     setSending(true);
     setMessageText('');
+    
+    // Add optimistic message to UI immediately
+    setMessages(prev => [optimisticMessage, ...prev]);
     
     // Stop typing indicator
     socketService.stopTyping(conversationId);
@@ -303,12 +414,19 @@ const ChatScreen = ({ route, navigation }) => {
       
       console.log('✅ Message sent successfully');
       
-      // Message will be added via socket listener, no need to add manually
+      // Remove optimistic message - socket will add the real one
+      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
       
     } catch (error) {
       console.error('❌ Failed to send message:', error);
       Alert.alert('Error', 'Failed to send message');
-      setMessageText(text); // Restore message on error
+      
+      // Mark message as failed
+      setMessages(prev => prev.map(msg => 
+        msg.id === optimisticMessage.id 
+          ? { ...msg, status: 'failed' }
+          : msg
+      ));
     } finally {
       setSending(false);
     }
@@ -347,6 +465,14 @@ const ChatScreen = ({ route, navigation }) => {
     if (message.sender_id !== user.id) return null; // Only show status for own messages
     
     switch (message.status) {
+      case 'sending':
+        // Clock icon - message being sent
+        return <Ionicons name="time-outline" size={14} color="rgba(255, 255, 255, 0.5)" style={styles.statusIcon} />;
+        
+      case 'failed':
+        // Exclamation mark - message failed to send
+        return <Ionicons name="alert-circle" size={14} color="#ff6b6b" style={styles.statusIcon} />;
+        
       case 'sent':
         // Single gray checkmark - message sent to server
         return <Ionicons name="checkmark" size={14} color="rgba(255, 255, 255, 0.6)" style={styles.statusIcon} />;
@@ -472,13 +598,19 @@ const ChatScreen = ({ route, navigation }) => {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading messages...</Text>
+  const renderSkeletonMessages = () => {
+    return Array.from({ length: 8 }).map((_, index) => (
+      <View key={index} style={[
+        styles.skeletonMessage,
+        index % 2 === 0 ? styles.skeletonMessageLeft : styles.skeletonMessageRight
+      ]}>
+        <View style={styles.skeletonMessageBubble}>
+          <View style={[styles.skeletonLine, { width: '80%' }]} />
+          <View style={[styles.skeletonLine, { width: '60%', marginTop: 4 }]} />
+        </View>
       </View>
-    );
-  }
+    ));
+  };
 
   return (
     <KeyboardAvoidingView 
@@ -488,24 +620,55 @@ const ChatScreen = ({ route, navigation }) => {
     >
       <StatusBar style="light" />
       
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContainer}
-        ListFooterComponent={renderTypingIndicator}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No messages yet</Text>
-            <Text style={styles.emptySubtext}>Start the conversation!</Text>
+      {/* Chat Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#007AFF" />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>{conversationName || 'Chat'}</Text>
+          {participants && participants.length > 0 && (
+            <Text style={styles.headerSubtitle}>
+              {participants.length} participant{participants.length > 1 ? 's' : ''}
+            </Text>
+          )}
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="videocam" size={22} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="call" size={22} color="#007AFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {loading ? (
+        <View style={styles.messagesList}>
+          <View style={styles.messagesContainer}>
+            {renderSkeletonMessages()}
           </View>
-        )}
-        onContentSizeChange={() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }}
-      />
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id ? item.id.toString() : `unknown-${Math.random()}`}
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContainer}
+          ListFooterComponent={renderTypingIndicator}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Start the conversation!</Text>
+            </View>
+          )}
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }}
+        />
+      )}
 
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
@@ -523,13 +686,13 @@ const ChatScreen = ({ route, navigation }) => {
           <TouchableOpacity
             style={[
               styles.sendButton,
-              messageText.trim() && !sending ? styles.sendButtonActive : styles.sendButtonInactive
+              messageText.trim() ? styles.sendButtonActive : styles.sendButtonInactive
             ]}
             onPress={handleSendMessage}
-            disabled={!messageText.trim() || sending}
+            disabled={!messageText.trim()}
             activeOpacity={0.7}
           >
-            {messageText.trim() && !sending ? (
+            {messageText.trim() ? (
               <LinearGradient
                 colors={['#4facfe', '#00f2fe']}
                 style={styles.sendButtonGradient}
@@ -540,7 +703,7 @@ const ChatScreen = ({ route, navigation }) => {
               </LinearGradient>
             ) : (
               <Ionicons 
-                name={sending ? 'hourglass' : 'send'} 
+                name="send" 
                 size={18} 
                 color="#8E8E93" 
               />
@@ -767,6 +930,67 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: '#C7C7CC',
+  },
+
+  // Header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: Platform.OS === 'ios' ? 50 : 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  backButton: {
+    marginRight: 12,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    marginLeft: 16,
+    padding: 4,
+  },
+
+  // Skeleton loading styles
+  skeletonMessage: {
+    flexDirection: 'row',
+    marginVertical: 4,
+    paddingHorizontal: 16,
+  },
+  skeletonMessageLeft: {
+    justifyContent: 'flex-start',
+  },
+  skeletonMessageRight: {
+    justifyContent: 'flex-end',
+  },
+  skeletonMessageBubble: {
+    backgroundColor: '#F2F2F7',
+    borderRadius: 18,
+    padding: 12,
+    maxWidth: '75%',
+    minWidth: 100,
+  },
+  skeletonLine: {
+    height: 12,
+    backgroundColor: '#E5E5EA',
+    borderRadius: 6,
   },
 });
 
