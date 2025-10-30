@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { messageApiExports, type User, type Message } from '../services/api';
 import socketService from '../services/socket';
 import messageCache from '../utils/messageCache';
+import logger from '../services/loggerConfig';
 import { styles } from './ChatScreen.styles';
 
 // Types for route params and navigation
@@ -168,13 +169,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
   // Load messages when component mounts
   useEffect(() => {
-    console.log('💬 ChatScreen mounted for conversation:', conversationId);
+    logger.info('CHAT', 'ChatScreen mounted for conversation:', conversationId);
     loadMessages();
     joinConversation();
 
     // Listen for socket connection and join room when ready
     const handleSocketConnect = () => {
-      console.log('🔗 Socket connected, joining conversation room');
+      logger.socket('Socket connected, joining conversation room');
       joinConversation();
     };
 
@@ -184,9 +185,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     setTimeout(async () => {
       try {
         await messageApiExports.markAsRead(conversationId);
-        console.log('✅ Auto-marked conversation as read:', conversationId);
+        logger.info(
+          'CHAT',
+          'Auto-marked conversation as read:',
+          conversationId
+        );
       } catch (error) {
-        console.error('❌ Failed to auto-mark conversation as read:', error);
+        logger.error(
+          'CHAT',
+          'Failed to auto-mark conversation as read:',
+          error
+        );
       }
     }, 500); // Small delay to ensure messages are loaded first
 
@@ -202,12 +211,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
     try {
       // 1. Try to load from cache first for instant display
-      console.log('📦 Checking cache for conversation:', conversationId);
+      logger.debug('CACHE', 'Checking cache for conversation:', conversationId);
       const cachedMessages =
         await messageCache.getCachedMessages(conversationId);
 
       if (cachedMessages && cachedMessages.length > 0) {
-        console.log('⚡ Loaded', cachedMessages.length, 'messages from cache');
+        logger.performance(
+          'Loaded',
+          cachedMessages.length,
+          'messages from cache'
+        );
         setMessages(cachedMessages as ChatMessage[]);
         setLoading(false); // Stop loading immediately with cached data
 
@@ -218,8 +231,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       }
 
       // 2. Fetch fresh data from API in background
-      console.log(
-        '📥 Loading fresh messages from API for conversation:',
+      logger.network(
+        'Loading fresh messages from API for conversation:',
         conversationId
       );
       const response = await messageApiExports.getMessages(conversationId);
@@ -238,10 +251,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           });
 
         if (hasConflicts) {
-          console.log('⚠️ Cache conflicts detected, refreshing from API');
+          logger.warn('CACHE', 'Cache conflicts detected, refreshing from API');
           await messageCache.refreshCacheFromAPI(conversationId, freshMessages);
         } else {
-          console.log('✅ Cache is up to date');
+          logger.debug('CACHE', 'Cache is up to date');
           await messageCache.cacheMessages(conversationId, freshMessages);
         }
       } else {
@@ -249,8 +262,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       }
 
       setMessages(freshMessages as ChatMessage[]);
-      console.log(
-        '✅ Loaded',
+      logger.performance(
+        'Loaded',
         freshMessages.length,
         'fresh messages from API and resolved conflicts'
       );
@@ -260,14 +273,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 100);
     } catch (error) {
-      console.error('❌ Failed to load messages:', error);
+      logger.error('CHAT', 'Failed to load messages:', error);
       Alert.alert('Error', 'Failed to load messages');
     } finally {
       setLoading(false);
 
       // Process queued messages after loading completes
       if (queuedMessages.length > 0) {
-        console.log('📤 Processing', queuedMessages.length, 'queued messages');
+        logger.info(
+          'CHAT',
+          'Processing',
+          queuedMessages.length,
+          'queued messages'
+        );
 
         // Add queued messages to UI
         setMessages(prev => [...queuedMessages, ...prev]);
@@ -284,7 +302,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
             // Remove optimistic message - socket will add the real one
             setMessages(prev => prev.filter(msg => msg.id !== queuedMsg.id));
           } catch (error) {
-            console.error('❌ Failed to send queued message:', error);
+            logger.error('CHAT', 'Failed to send queued message:', error);
             setMessages(prev =>
               prev.map(msg =>
                 msg.id === queuedMsg.id ? { ...msg, status: 'failed' } : msg
@@ -302,20 +320,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   // Join conversation socket room
   const joinConversation = (): void => {
     if (socketService.isConnected) {
-      console.log('🔗 Joining socket room for conversation:', conversationId);
+      logger.socket('Joining socket room for conversation:', conversationId);
       socketService.joinConversation(conversationId);
 
       // Set up socket listeners for this conversation
       setupSocketListeners();
     } else {
-      console.log('⏳ Socket not connected yet, will join when ready');
+      logger.socket('Socket not connected yet, will join when ready');
     }
   };
 
   // Leave conversation socket room
   const leaveConversation = (): void => {
     if (socketService.isConnected) {
-      console.log('🚪 Leaving socket room for conversation:', conversationId);
+      logger.socket('Leaving socket room for conversation:', conversationId);
       socketService.leaveConversation(conversationId);
 
       // Clean up socket listeners
@@ -330,14 +348,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       'new_message',
       (message: SocketMessage) => {
         if (message.conversation_id === conversationId) {
-          console.log('📨 Received new message via socket:', message.id);
+          logger.socket('Received new message via socket:', message.id);
 
           // Add message to local state
           setMessages(prevMessages => {
             // Check if message already exists to prevent duplicates
             const messageExists = prevMessages.some(m => m.id === message.id);
             if (messageExists) {
-              console.log('⚠️ Message already exists, skipping:', message.id);
+              logger.warn(
+                'CHAT',
+                'Message already exists, skipping:',
+                message.id
+              );
               return prevMessages;
             }
 
@@ -388,7 +410,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       'message_delivered',
       (data: SocketMessageStatusData) => {
         if (data.conversationId === conversationId) {
-          console.log('📬 Message delivered:', data.messageId);
+          logger.socket('Message delivered:', data.messageId);
 
           // Update message status in local state
           setMessages(prevMessages =>
@@ -411,7 +433,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       'message_read',
       (data: SocketMessageStatusData) => {
         if (data.conversationId === conversationId) {
-          console.log('👁️ Message read:', data.messageId);
+          logger.socket('Message read:', data.messageId);
 
           // Update message status in local state
           setMessages(prevMessages =>
@@ -430,8 +452,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       'conversation_read',
       (data: SocketConversationReadData) => {
         if (data.conversationId === conversationId) {
-          console.log(
-            '👁️ Conversation read:',
+          logger.socket(
+            'Conversation read:',
             data.messageIds.length,
             'messages'
           );
@@ -460,7 +482,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
   // Clean up socket listeners
   const cleanupSocketListeners = (): void => {
-    const socketWithUnsubscribers = socketService as SocketServiceWithUnsubscribers;
+    const socketWithUnsubscribers =
+      socketService as SocketServiceWithUnsubscribers;
     if (socketWithUnsubscribers._currentUnsubscribers) {
       socketWithUnsubscribers._currentUnsubscribers.forEach(
         (unsubscribe: () => void) => unsubscribe()
@@ -505,7 +528,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     socketService.stopTyping(conversationId);
 
     try {
-      console.log('🚀 Sending message:', text);
+      logger.info('CHAT', 'Sending message:', text);
 
       await messageApiExports.sendMessage({
         conversationId,
@@ -513,12 +536,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         messageType: 'text',
       });
 
-      console.log('✅ Message sent successfully');
+      logger.info('CHAT', 'Message sent successfully');
 
       // Remove optimistic message - socket will add the real one
       setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
     } catch (error) {
-      console.error('❌ Failed to send message:', error);
+      logger.error('CHAT', 'Failed to send message:', error);
       Alert.alert('Error', 'Failed to send message');
 
       // Mark message as failed
