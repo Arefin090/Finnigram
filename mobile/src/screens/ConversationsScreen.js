@@ -189,6 +189,7 @@ const ConversationsScreen = ({ navigation }) => {
               conversationId: item.id,
               conversationName: getConversationName(item),
               conversationType: item.type,
+              participants: item.participants,
             })
           }
           activeOpacity={0.7}
