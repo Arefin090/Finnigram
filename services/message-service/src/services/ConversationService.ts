@@ -160,6 +160,73 @@ class ConversationService {
     }
   }
 
+  // New method to get participants with user details from local profiles
+  async getParticipantsWithUserDetails(conversationId: number): Promise<
+    Array<
+      ConversationParticipant & {
+        user: {
+          id: number;
+          username: string;
+          display_name: string | null;
+          email: string;
+        };
+      }
+    >
+  > {
+    try {
+      const participants = await this.prisma.conversationParticipant.findMany({
+        where: { conversationId },
+        select: {
+          userId: true,
+          role: true,
+          joinedAt: true,
+          lastReadAt: true,
+        },
+      });
+
+      // Get user profiles for all participants from local materialized view
+      const participantUserIds = participants.map(p => p.userId);
+      const userProfiles = await this.prisma.userProfile.findMany({
+        where: {
+          userId: {
+            in: participantUserIds,
+          },
+        },
+        select: {
+          userId: true,
+          username: true,
+          displayName: true,
+          email: true,
+        },
+      });
+
+      // Combine participant data with user profile data
+      return participants.map(p => {
+        const userProfile = userProfiles.find(
+          profile => profile.userId === p.userId
+        );
+        return {
+          user_id: p.userId,
+          role: p.role,
+          joined_at: p.joinedAt,
+          last_read_at: p.lastReadAt,
+          user: {
+            id: p.userId,
+            username: userProfile?.username || 'Unknown',
+            display_name: userProfile?.displayName || null,
+            email: userProfile?.email || 'unknown@email.com',
+          },
+        };
+      });
+    } catch (error) {
+      logger.error(
+        'Error getting conversation participants with user details:',
+        error
+      );
+      throw error;
+    }
+  }
+
   async addParticipant(
     conversationId: number,
     userId: number,
@@ -320,15 +387,15 @@ class ConversationService {
         },
       });
 
-      // We'll need to fetch user details separately since we don't have User table in this service
-      // This matches the original implementation where user details are fetched via separate queries
+      // Now we use the local user profiles instead of cross-service calls
       const result: ConversationWithParticipants[] = [];
 
       for (const conversation of conversations) {
-        // Get the latest message for preview
+        // Get the latest message for preview (exclude deleted messages)
         const latestMessage = await this.prisma.message.findFirst({
           where: {
             conversationId: conversation.id,
+            deletedAt: null,
           },
           orderBy: {
             createdAt: 'desc',
@@ -339,9 +406,45 @@ class ConversationService {
           },
         });
 
+        // Get user profiles for all participants from local materialized view
+        const participantUserIds = conversation.participants.map(p => p.userId);
+        const userProfiles = await this.prisma.userProfile.findMany({
+          where: {
+            userId: {
+              in: participantUserIds,
+            },
+          },
+          select: {
+            userId: true,
+            username: true,
+            displayName: true,
+            email: true,
+          },
+        });
+
+        // Create user objects in the expected format
+        const participants = userProfiles.map(profile => ({
+          id: profile.userId,
+          username: profile.username,
+          display_name: profile.displayName || undefined,
+          email: profile.email,
+        }));
+
         const userParticipant = conversation.participants.find(
           p => p.userId === userId
         );
+
+        // Calculate unread count for this user
+        const unreadCount = await this.prisma.message.count({
+          where: {
+            conversationId: conversation.id,
+            deletedAt: null,
+            senderId: { not: userId }, // Don't count own messages
+            createdAt: {
+              gt: userParticipant?.lastReadAt || new Date(0), // Messages after last read
+            },
+          },
+        });
 
         result.push({
           id: conversation.id,
@@ -352,10 +455,11 @@ class ConversationService {
           created_by: conversation.createdBy,
           created_at: conversation.createdAt,
           updated_at: conversation.updatedAt,
-          participants: [], // Will be populated by route handler with user service data
+          participants, // Now populated with actual user data from local profiles
           last_message: latestMessage?.content || null,
           last_message_at: latestMessage?.createdAt || conversation.createdAt,
           last_read_at: userParticipant?.lastReadAt || null,
+          unread_count: unreadCount,
         });
       }
 

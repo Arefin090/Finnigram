@@ -1,12 +1,15 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../utils/database';
 import logger from '../utils/logger';
+import { v4 as uuidv4 } from 'uuid';
 import {
   User,
   UserSearchResult,
   CreateUserData,
   UpdateUserData,
   UserServiceInterface,
+  UserCreatedEvent,
+  UserUpdatedEvent,
 } from '../types';
 
 class UserService implements UserServiceInterface {
@@ -14,17 +17,50 @@ class UserService implements UserServiceInterface {
     try {
       const hashedPassword = await bcrypt.hash(data.password, 12);
 
-      const user = await prisma.user.create({
-        data: {
-          email: data.email,
-          username: data.username,
-          passwordHash: hashedPassword,
-          displayName: data.displayName || data.username,
-        },
+      // Use transaction to ensure atomicity between user creation and event publishing
+      const result = await prisma.$transaction(async tx => {
+        // Create the user
+        const user = await tx.user.create({
+          data: {
+            email: data.email,
+            username: data.username,
+            passwordHash: hashedPassword,
+            displayName: data.displayName || data.username,
+          },
+        });
+
+        // Create the event for the outbox
+        const userCreatedEvent: UserCreatedEvent = {
+          eventId: uuidv4(),
+          eventType: 'USER_CREATED',
+          userId: user.id,
+          timestamp: new Date().toISOString(),
+          version: 1,
+          data: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+            createdAt: user.createdAt.toISOString(),
+          },
+        };
+
+        // Write event to outbox table in the same transaction
+        await tx.userEventOutbox.create({
+          data: {
+            userId: user.id,
+            eventType: userCreatedEvent.eventType,
+            eventData: userCreatedEvent as object,
+            processed: false,
+          },
+        });
+
+        return user;
       });
 
-      logger.info(`User created: ${data.username}`);
-      return user;
+      logger.info(`User created with event outbox entry: ${data.username}`);
+      return result;
     } catch (error: unknown) {
       if (
         error &&
@@ -81,13 +117,51 @@ class UserService implements UserServiceInterface {
 
   async updateOnlineStatus(userId: number, isOnline: boolean): Promise<void> {
     try {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          isOnline,
-          lastSeen: new Date(),
-        },
+      // Use transaction to ensure atomicity between user update and event publishing
+      await prisma.$transaction(async tx => {
+        // Update the user's online status
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: {
+            isOnline,
+            lastSeen: new Date(),
+          },
+        });
+
+        // Create the event for the outbox
+        const userUpdatedEvent: UserUpdatedEvent = {
+          eventId: uuidv4(),
+          eventType: 'USER_UPDATED',
+          userId: user.id,
+          timestamp: new Date().toISOString(),
+          version: 1,
+          data: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+            isOnline: user.isOnline,
+            lastSeen: user.lastSeen?.toISOString() || null,
+            updatedAt: user.updatedAt.toISOString(),
+          },
+          changes: ['isOnline', 'lastSeen'],
+        };
+
+        // Write event to outbox table in the same transaction
+        await tx.userEventOutbox.create({
+          data: {
+            userId: user.id,
+            eventType: userUpdatedEvent.eventType,
+            eventData: userUpdatedEvent as object,
+            processed: false,
+          },
+        });
       });
+
+      logger.info(
+        `User online status updated with event outbox entry: ${userId}, isOnline: ${isOnline}`
+      );
     } catch (error) {
       logger.error('Error updating online status:', error);
       throw error;
@@ -135,23 +209,70 @@ class UserService implements UserServiceInterface {
 
   async updateProfile(userId: number, data: UpdateUserData): Promise<User> {
     try {
+      // Track which fields are changing for the event
+      const changedFields: string[] = [];
+
       const updateData: Partial<User> & { updatedAt: Date } = {
         updatedAt: new Date(),
       };
 
       if (data.displayName !== undefined) {
         updateData.displayName = data.displayName;
+        changedFields.push('displayName');
       }
       if (data.avatarUrl !== undefined) {
         updateData.avatarUrl = data.avatarUrl;
+        changedFields.push('avatarUrl');
       }
 
-      const user = await prisma.user.update({
-        where: { id: userId },
-        data: updateData,
+      // Use transaction to ensure atomicity between user update and event publishing
+      const result = await prisma.$transaction(async tx => {
+        // Update the user
+        const user = await tx.user.update({
+          where: { id: userId },
+          data: updateData,
+        });
+
+        // Only create event if there were actual changes
+        if (changedFields.length > 0) {
+          // Create the event for the outbox
+          const userUpdatedEvent: UserUpdatedEvent = {
+            eventId: uuidv4(),
+            eventType: 'USER_UPDATED',
+            userId: user.id,
+            timestamp: new Date().toISOString(),
+            version: 1,
+            data: {
+              id: user.id,
+              username: user.username,
+              email: user.email,
+              displayName: user.displayName,
+              avatarUrl: user.avatarUrl,
+              isOnline: user.isOnline,
+              lastSeen: user.lastSeen?.toISOString() || null,
+              updatedAt: user.updatedAt.toISOString(),
+            },
+            changes: changedFields,
+          };
+
+          // Write event to outbox table in the same transaction
+          await tx.userEventOutbox.create({
+            data: {
+              userId: user.id,
+              eventType: userUpdatedEvent.eventType,
+              eventData: userUpdatedEvent as object,
+              processed: false,
+            },
+          });
+        }
+
+        return user;
       });
 
-      return user;
+      logger.info(
+        `User profile updated with event outbox entry: ${userId}, changes: ${changedFields.join(', ')}`
+      );
+      return result;
     } catch (error) {
       logger.error('Error updating user profile:', error);
       throw error;

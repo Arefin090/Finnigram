@@ -7,10 +7,34 @@ import {
   cacheUserConversations,
 } from '../utils/redis';
 import logger from '../utils/logger';
-import { CreateConversationRequest, ApiResponse } from '../types';
+import { CreateConversationRequest, ApiResponse, User } from '../types';
+import axios from 'axios';
 
 const router = Router();
 const conversationService = new ConversationService();
+
+const USER_SERVICE_URL =
+  process.env.USER_SERVICE_URL || 'http://localhost:3001';
+
+// Helper function to fetch user details from user-service (legacy - no longer used)
+const _fetchUserDetails = async (
+  userIds: number[],
+  authHeader: string
+): Promise<User[]> => {
+  try {
+    const response = await axios.post(
+      `${USER_SERVICE_URL}/api/users/bulk`,
+      { userIds },
+      {
+        headers: { Authorization: authHeader },
+      }
+    );
+    return response.data.users || [];
+  } catch (error) {
+    logger.error('Error fetching user details:', error);
+    return [];
+  }
+};
 
 // Get user's conversations
 router.get(
@@ -168,9 +192,8 @@ router.get(
         return;
       }
 
-      const participants = await conversationService.getParticipants(
-        parseInt(id)
-      );
+      const participants =
+        await conversationService.getParticipantsWithUserDetails(parseInt(id));
 
       res.json({
         conversation: {

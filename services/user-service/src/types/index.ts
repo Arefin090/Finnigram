@@ -160,3 +160,60 @@ export interface UserServiceInterface {
   searchUsers(query: string, limit?: number): Promise<UserSearchResult[]>;
   updateProfile(userId: number, data: UpdateUserData): Promise<User>;
 }
+
+// Event types for user data synchronization
+export interface BaseUserEvent {
+  eventId: string;
+  eventType: 'USER_CREATED' | 'USER_UPDATED' | 'USER_DELETED';
+  userId: number;
+  timestamp: string; // ISO string
+  version: number; // For event versioning
+}
+
+export interface UserCreatedEvent extends BaseUserEvent {
+  eventType: 'USER_CREATED';
+  data: {
+    id: number;
+    username: string;
+    email: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    createdAt: string;
+  };
+}
+
+export interface UserUpdatedEvent extends BaseUserEvent {
+  eventType: 'USER_UPDATED';
+  data: {
+    id: number;
+    username: string;
+    email: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    isOnline: boolean;
+    lastSeen: string | null;
+    updatedAt: string;
+  };
+  changes: string[]; // List of fields that changed
+}
+
+export interface UserDeletedEvent extends BaseUserEvent {
+  eventType: 'USER_DELETED';
+  data: {
+    id: number;
+    username: string;
+  };
+}
+
+export type UserEvent = UserCreatedEvent | UserUpdatedEvent | UserDeletedEvent;
+
+// Outbox event storage type
+export interface UserEventOutbox {
+  id: number;
+  userId: number;
+  eventType: string;
+  eventData: UserEvent;
+  processed: boolean;
+  createdAt: Date;
+  processedAt: Date | null;
+}

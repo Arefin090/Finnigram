@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import logger from './utils/logger';
 import { initializeDatabase, disconnectDatabase } from './utils/database';
+import { connectRedis, client as redisClient } from './utils/redis';
+import OutboxRelayService from './services/OutboxRelayService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import errorHandler from './middleware/errorHandler';
@@ -42,16 +44,30 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  const healthStatus: HealthStatus = {
-    status: 'healthy',
-    service: 'user-service',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0',
-  };
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    // Get outbox relay statistics
+    const outboxStats = await OutboxRelayService.getStats();
 
-  res.json(healthStatus);
+    const healthStatus: HealthStatus & { outboxStats?: typeof outboxStats } = {
+      status: 'healthy',
+      service: 'user-service',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      version: process.env.npm_package_version || '1.0.0',
+      outboxStats,
+    };
+
+    res.json(healthStatus);
+  } catch (error) {
+    logger.error('Health check error:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      service: 'user-service',
+      timestamp: new Date().toISOString(),
+      error: 'Health check failed',
+    });
+  }
 });
 
 // Metrics endpoint (basic)
@@ -83,11 +99,17 @@ const gracefulShutdown = async (): Promise<void> => {
   logger.info('Starting graceful shutdown...');
 
   try {
+    // Stop outbox relay service
+    OutboxRelayService.stop();
+    logger.info('Outbox relay service stopped');
+
+    // Disconnect from Redis
+    await redisClient.disconnect();
+    logger.info('Redis disconnected');
+
     // Disconnect from database
     await disconnectDatabase();
     logger.info('Database disconnected');
-
-    // Other cleanup can go here
 
     process.exit(0);
   } catch (error) {
@@ -107,6 +129,9 @@ const startServer = async (): Promise<void> => {
       `DATABASE_URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`
     );
     logger.info(
+      `REDIS_URL configured: ${process.env.REDIS_URL ? 'Yes' : 'No'}`
+    );
+    logger.info(
       `JWT_SECRET configured: ${process.env.JWT_SECRET ? 'Yes' : 'No'}`
     );
     logger.info(`PORT: ${PORT}`);
@@ -114,6 +139,14 @@ const startServer = async (): Promise<void> => {
     // Initialize database first (like message-service)
     await initializeDatabase();
     logger.info('Database initialized successfully');
+
+    // Initialize Redis
+    await connectRedis();
+    logger.info('Redis initialized successfully');
+
+    // Start the outbox relay service
+    OutboxRelayService.start();
+    logger.info('Outbox relay service started');
 
     app.listen(PORT, '0.0.0.0', () => {
       logger.info(`User Service running on port ${PORT}`);

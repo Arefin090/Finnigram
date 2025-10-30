@@ -83,3 +83,20 @@ model MessageAttachment {
 
   @@map("message_attachments")
 }
+
+model UserProfile {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @unique @map("user_id")
+  username    String    @db.VarChar(50)
+  displayName String?   @map("display_name") @db.VarChar(100)
+  email       String    @db.VarChar(255)
+  avatarUrl   String?   @map("avatar_url") @db.Text
+  isOnline    Boolean   @default(false) @map("is_online")
+  lastSeen    DateTime? @map("last_seen") @db.Timestamp(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([userId])
+  @@index([username])
+  @@map("user_profiles")
+}
