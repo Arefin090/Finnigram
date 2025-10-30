@@ -107,6 +107,14 @@ export interface UpdateProfileResponse {
   user: UserPublic;
 }
 
+export interface BulkUsersRequest {
+  userIds: number[];
+}
+
+export interface BulkUsersResponse {
+  users: UserPublic[];
+}
+
 // Health and metrics types
 export interface HealthStatus {
   status: string;
