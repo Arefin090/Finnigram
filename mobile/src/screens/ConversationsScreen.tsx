@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-  useMemo,
-  useCallback,
-  useRef,
-} from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +8,6 @@ import {
   Alert,
   Animated,
   Platform,
-  Dimensions,
   LayoutAnimation,
   UIManager,
 } from 'react-native';
@@ -24,8 +17,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { styles } from './ConversationsScreen.styles';
-
-const { width } = Dimensions.get('window');
 
 // Enable LayoutAnimation for Android
 if (
@@ -37,7 +28,7 @@ if (
 
 // Types for navigation and props
 interface Navigation {
-  navigate: (screen: string, params?: any) => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
 }
 
 interface ConversationsScreenProps {
@@ -69,16 +60,12 @@ interface RenderItemProps {
   index: number;
 }
 
-const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation }) => {
+const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
+  navigation,
+}) => {
   const { user } = useAuth();
-  const {
-    conversations,
-    loading,
-    error,
-    loadConversations,
-    onlineUsers,
-    clearError,
-  } = useChat();
+  const { conversations, loading, error, loadConversations, clearError } =
+    useChat();
 
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchVisible, setSearchVisible] = useState<boolean>(false);
@@ -163,7 +150,7 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation })
       if (conversation.participants && conversation.participants.length > 0) {
         // Find the other participant (not the current user)
         const otherParticipant = conversation.participants.find(
-          p => p.id !== user.id && p.id !== (user as any).user_id
+          p => p.id !== user.id && p.id !== (user as { user_id?: number }).user_id
         );
 
         if (otherParticipant) {
@@ -189,7 +176,7 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation })
     [user.id]
   );
 
-  const isUserOnline = (conversation: Conversation): boolean => {
+  const isUserOnline = (_conversation: Conversation): boolean => {
     // Simplified online check - would need participant user IDs in real app
     return false;
   };
@@ -206,7 +193,7 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation })
   };
 
   const renderConversation = useCallback(
-    ({ item, index }: RenderItemProps): React.ReactElement => (
+    ({ item }: RenderItemProps): React.ReactElement => (
       <Animated.View
         style={[
           styles.conversationWrapper,
@@ -335,7 +322,6 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation })
       <TouchableOpacity
         style={styles.emptyButton}
         onPress={() => {
-          console.log('Start conversation pressed');
           Alert.alert(
             'Coming Soon',
             'User search and conversation creation is coming soon!'
@@ -452,7 +438,6 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({ navigation })
         <TouchableOpacity
           style={styles.fab}
           onPress={() => {
-            console.log('FAB clicked - navigating to user search');
             Animated.sequence([
               Animated.timing(fabAnimation, {
                 toValue: 0.9,
