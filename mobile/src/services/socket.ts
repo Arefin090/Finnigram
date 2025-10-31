@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REALTIME_SERVICE_URL } from '../config/environment';
+import logger from './loggerConfig';
 
 // Type definitions for socket events and data
 interface SocketEventCallback {
@@ -72,12 +73,12 @@ class SocketService {
           // Process queued messages
           this.processMessageQueue();
           
-          console.log('Socket connected:', data);
+          logger.socket('Socket connected:', data);
           resolve(data);
         });
 
         this.socket.on('connect_error', (error: Error) => {
-          console.error('Socket connection error:', error);
+          logger.error('SOCKET', 'Socket connection error:', error);
           this.isConnected = false;
           
           // Attempt reconnection if not max attempts reached
@@ -89,7 +90,7 @@ class SocketService {
         });
 
         this.socket.on('disconnect', (reason: string) => {
-          console.log('Socket disconnected:', reason);
+          logger.socket('Socket disconnected:', reason);
           this.isConnected = false;
           
           // Auto-reconnect unless disconnect was intentional
@@ -99,7 +100,7 @@ class SocketService {
         });
       });
     } catch (error) {
-      console.error('Failed to connect socket:', error);
+      logger.error('SOCKET', 'Failed to connect socket:', error);
       throw error;
     }
   }
@@ -112,19 +113,19 @@ class SocketService {
 
     // Check if we've exceeded max attempts
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
+      logger.error('SOCKET', 'Max reconnection attempts reached');
       return;
     }
 
     this.reconnectAttempts++;
     
-    console.log(`Scheduling reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay}ms`);
+    logger.info('SOCKET', `Scheduling reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay}ms`);
 
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.connect(true);
       } catch (error) {
-        console.error('Reconnection attempt failed:', error);
+        logger.error('SOCKET', 'Reconnection attempt failed:', error);
         
         // Exponential backoff - double the delay up to max
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
@@ -134,7 +135,7 @@ class SocketService {
 
   private processMessageQueue(): void {
     if (this.messageQueue.length > 0) {
-      console.log(`Processing ${this.messageQueue.length} queued messages`);
+      logger.info('SOCKET', `Processing ${this.messageQueue.length} queued messages`);
       
       this.messageQueue.forEach(message => {
         if (this.socket && this.isConnected) {
@@ -153,12 +154,12 @@ class SocketService {
     this.socket.on('connect', () => {
       this.isConnected = true;
       this.socket?.emit('user_online');
-      console.log('Socket connected successfully');
+      logger.socket('Socket connected successfully');
     });
 
     this.socket.on('disconnect', () => {
       this.isConnected = false;
-      console.log('Socket disconnected');
+      logger.socket('Socket disconnected');
     });
 
     // Forward events to registered listeners
@@ -184,7 +185,7 @@ class SocketService {
     if (this.socket) {
       // Emit user_offline before disconnecting if still connected
       if (this.isConnected) {
-        console.log('Emitting user_offline before disconnect...');
+        logger.socket('Emitting user_offline before disconnect...');
         this.socket.emit('user_offline');
       }
 
@@ -192,7 +193,7 @@ class SocketService {
       this.socket = null;
       this.isConnected = false;
       this.listeners.clear();
-      console.log('Socket disconnected and cleaned up');
+      logger.socket('Socket disconnected and cleaned up');
     }
   }
 
@@ -201,7 +202,7 @@ class SocketService {
     if (!this.listeners.has(eventName)) {
       this.listeners.set(eventName, []);
     }
-    this.listeners.get(eventName)!.push(callback);
+    this.listeners.get(eventName)?.push(callback);
 
     // Return unsubscribe function
     return () => {
@@ -226,7 +227,7 @@ class SocketService {
       this.socket.emit(eventName, data);
     } else {
       // Queue message for when connection is restored
-      console.log('Socket not connected, queuing message:', eventName);
+      logger.info('SOCKET', 'Socket not connected, queuing message:', eventName);
       this.messageQueue.push({ event: eventName, data });
       
       // Try to reconnect if not already attempting
