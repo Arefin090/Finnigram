@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { styles } from './ConversationsScreen.styles';
 
 // Enable LayoutAnimation for Android
@@ -64,8 +65,16 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
   navigation,
 }) => {
   const { user } = useAuth();
-  const { conversations, loading, error, loadConversations, clearError } =
-    useChat();
+  const {
+    conversations,
+    loading,
+    loadingMore,
+    hasMore,
+    error,
+    loadConversations,
+    loadMoreConversations,
+    clearError,
+  } = useChat();
 
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchVisible, setSearchVisible] = useState<boolean>(false);
@@ -120,6 +129,12 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
     setRefreshing(true);
     await loadConversations();
     setRefreshing(false);
+  };
+
+  const handleLoadMore = (): void => {
+    if (hasMore && !loadingMore && !loading) {
+      loadMoreConversations();
+    }
   };
 
   const formatLastSeen = (timestamp: string | undefined): string => {
@@ -342,6 +357,19 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
     </View>
   );
 
+  const renderLoadingFooter = (): React.ReactElement | null => {
+    if (!loadingMore) return null;
+
+    return (
+      <View style={styles.loadingFooter}>
+        <View style={styles.loadingDot} />
+        <Text style={styles.loadingFooterText}>
+          Loading more conversations...
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -418,6 +446,9 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
           }
           ListEmptyComponent={loading ? null : renderEmpty}
           ListHeaderComponent={loading ? renderLoading : null}
+          ListFooterComponent={renderLoadingFooter}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
           contentContainerStyle={
             !loading && conversations.length === 0
               ? styles.emptyList
@@ -470,4 +501,15 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
   );
 };
 
-export default ConversationsScreen;
+// Wrap ConversationsScreen with ErrorBoundary for crash protection
+const ConversationsScreenWithErrorBoundary: React.FC<ConversationsScreenProps> = (props) => (
+  <ErrorBoundary
+    onError={(error, errorInfo) => {
+      console.error('ConversationsScreen crashed:', error, errorInfo);
+    }}
+  >
+    <ConversationsScreen {...props} />
+  </ErrorBoundary>
+);
+
+export default ConversationsScreenWithErrorBoundary;
