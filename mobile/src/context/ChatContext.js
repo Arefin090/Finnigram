@@ -39,6 +39,13 @@ const chatReducer = (state, action) => {
       };
 
     case 'ADD_CONVERSATION':
+      // Check if conversation already exists to avoid duplicates
+      const existingConversation = state.conversations.find(
+        c => c.id === action.payload.id
+      );
+      if (existingConversation) {
+        return state; // Don't add duplicate
+      }
       return {
         ...state,
         conversations: [action.payload, ...state.conversations],
@@ -100,8 +107,16 @@ export const ChatProvider = ({ children }) => {
 
   // Set up minimal socket listeners - only for global conversation events
   useEffect(() => {
-    if (!isAuthenticated || !socketService.isConnected) return;
-
+    console.log('🔌 ChatContext: Setting up socket listeners', { 
+      isAuthenticated, 
+      socketConnected: socketService.isConnected 
+    });
+    
+    if (!isAuthenticated) {
+      console.log('🔌 ChatContext: Skipping socket setup - not authenticated');
+      return;
+    }
+    
     // Listen for new conversations (when someone starts a chat with you)
     const unsubscribeNewConversation = socketService.on(
       'conversation_created',
@@ -111,13 +126,8 @@ export const ChatProvider = ({ children }) => {
           conversation.id
         );
 
-        // Check if conversation already exists to avoid duplicates
-        const existingConversation = state.conversations.find(
-          c => c.id === conversation.id
-        );
-        if (!existingConversation) {
-          dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
-        }
+        // Add conversation (reducer will handle duplicates)
+        dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
       }
     );
 
@@ -126,8 +136,10 @@ export const ChatProvider = ({ children }) => {
       'new_message',
       message => {
         console.log(
-          '📨 Global message received for conversation:',
-          message.conversation_id
+          '📨 ChatContext: Global message received for conversation:',
+          message.conversation_id,
+          'Content:',
+          message.content
         );
 
         // Update the conversation preview and re-sort conversations by latest message
@@ -157,12 +169,15 @@ export const ChatProvider = ({ children }) => {
       }
     );
 
+    console.log('🔌 ChatContext: Socket listeners set up successfully');
+
     // Cleanup function
     return () => {
+      console.log('🔌 ChatContext: Cleaning up socket listeners');
       unsubscribeNewConversation();
       unsubscribeGlobalMessages();
     };
-  }, [isAuthenticated, socketService.isConnected, state.conversations]);
+  }, [isAuthenticated, user?.id]);
 
   // Load conversations list (initial load)
   const loadConversations = async (refresh = false) => {
