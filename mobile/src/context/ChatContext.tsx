@@ -1,12 +1,121 @@
-import React, { createContext, useContext, useEffect, useReducer } from 'react';
-import { messageApiExports } from '../services/api';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useReducer,
+  ReactNode,
+} from 'react';
+import { messageApiExports, type Conversation } from '../services/api';
 import socketService from '../services/socket';
 import { useAuth } from './AuthContext';
+import logger from '../services/loggerConfig';
 
-const ChatContext = createContext();
+// Type definitions for Chat context
+interface ChatState {
+  loading: boolean;
+  loadingMore: boolean;
+  conversations: Conversation[];
+  hasMore: boolean;
+  currentOffset: number;
+  error: string | null;
+}
+
+interface LoadingAction {
+  type: 'LOADING';
+}
+
+interface LoadingMoreAction {
+  type: 'LOADING_MORE';
+}
+
+interface SetConversationsAction {
+  type: 'SET_CONVERSATIONS';
+  payload: {
+    conversations: Conversation[];
+    hasMore: boolean;
+  };
+}
+
+interface AppendConversationsAction {
+  type: 'APPEND_CONVERSATIONS';
+  payload: {
+    conversations: Conversation[];
+    hasMore: boolean;
+  };
+}
+
+interface AddConversationAction {
+  type: 'ADD_CONVERSATION';
+  payload: Conversation;
+}
+
+interface UpdateConversationAction {
+  type: 'UPDATE_CONVERSATION';
+  payload: { id: number } & Partial<Conversation>;
+}
+
+interface UpdateConversationWithSortAction {
+  type: 'UPDATE_CONVERSATION_WITH_SORT';
+  payload: { id: number } & Partial<Conversation>;
+}
+
+interface ErrorAction {
+  type: 'ERROR';
+  payload: string;
+}
+
+interface ClearErrorAction {
+  type: 'CLEAR_ERROR';
+}
+
+type ChatAction =
+  | LoadingAction
+  | LoadingMoreAction
+  | SetConversationsAction
+  | AppendConversationsAction
+  | AddConversationAction
+  | UpdateConversationAction
+  | UpdateConversationWithSortAction
+  | ErrorAction
+  | ClearErrorAction;
+
+interface SocketMessage {
+  id: string | number;
+  content: string;
+  sender_id: number;
+  conversation_id: number;
+  message_type: string;
+  created_at: string;
+}
+
+interface ChatContextType extends ChatState {
+  loadConversations: (refresh?: boolean) => Promise<void>;
+  loadMoreConversations: () => Promise<void>;
+  createConversation: (
+    type: string,
+    participants: number[],
+    name?: string | null,
+    description?: string | null
+  ) => Promise<Conversation>;
+  updateConversation: (
+    conversationId: number,
+    updates: Partial<Conversation>
+  ) => void;
+  updateConversationWithSort: (
+    conversationId: number,
+    updates: Partial<Conversation>
+  ) => void;
+  clearError: () => void;
+}
+
+interface ChatProviderProps {
+  children: ReactNode;
+}
+
+const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 // Simple chat reducer - only manages conversations list and basic state
-const chatReducer = (state, action) => {
+const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
   switch (action.type) {
     case 'LOADING':
       return { ...state, loading: true, error: null };
@@ -38,7 +147,7 @@ const chatReducer = (state, action) => {
         error: null,
       };
 
-    case 'ADD_CONVERSATION':
+    case 'ADD_CONVERSATION': {
       // Check if conversation already exists to avoid duplicates
       const existingConversation = state.conversations.find(
         c => c.id === action.payload.id
@@ -50,6 +159,7 @@ const chatReducer = (state, action) => {
         ...state,
         conversations: [action.payload, ...state.conversations],
       };
+    }
 
     case 'UPDATE_CONVERSATION':
       return {
@@ -59,7 +169,7 @@ const chatReducer = (state, action) => {
         ),
       };
 
-    case 'UPDATE_CONVERSATION_WITH_SORT':
+    case 'UPDATE_CONVERSATION_WITH_SORT': {
       const updatedConversations = state.conversations.map(conv =>
         conv.id === action.payload.id ? { ...conv, ...action.payload } : conv
       );
@@ -67,14 +177,15 @@ const chatReducer = (state, action) => {
       // Sort by last_message_at (most recent first)
       updatedConversations.sort(
         (a, b) =>
-          new Date(b.last_message_at || b.created_at) -
-          new Date(a.last_message_at || a.created_at)
+          new Date(b.last_message_at || b.created_at).getTime() -
+          new Date(a.last_message_at || a.created_at).getTime()
       );
 
       return {
         ...state,
         conversations: updatedConversations,
       };
+    }
 
     case 'ERROR':
       return {
@@ -92,7 +203,7 @@ const chatReducer = (state, action) => {
   }
 };
 
-const initialState = {
+const initialState: ChatState = {
   loading: false,
   loadingMore: false,
   conversations: [],
@@ -101,30 +212,27 @@ const initialState = {
   error: null,
 };
 
-export const ChatProvider = ({ children }) => {
+export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const { isAuthenticated, user } = useAuth();
 
   // Set up minimal socket listeners - only for global conversation events
   useEffect(() => {
-    console.log('🔌 ChatContext: Setting up socket listeners', { 
-      isAuthenticated, 
-      socketConnected: socketService.isConnected 
+    logger.socket('ChatContext: Setting up socket listeners', {
+      isAuthenticated,
+      socketConnected: socketService.isConnected,
     });
-    
+
     if (!isAuthenticated) {
-      console.log('🔌 ChatContext: Skipping socket setup - not authenticated');
+      logger.socket('ChatContext: Skipping socket setup - not authenticated');
       return;
     }
-    
+
     // Listen for new conversations (when someone starts a chat with you)
     const unsubscribeNewConversation = socketService.on(
       'conversation_created',
-      conversation => {
-        console.log(
-          '🆕 New conversation received via socket:',
-          conversation.id
-        );
+      (conversation: Conversation) => {
+        logger.socket('New conversation received via socket:', conversation.id);
 
         // Add conversation (reducer will handle duplicates)
         dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
@@ -134,9 +242,9 @@ export const ChatProvider = ({ children }) => {
     // Listen for new messages globally to update conversation previews
     const unsubscribeGlobalMessages = socketService.on(
       'new_message',
-      message => {
-        console.log(
-          '📨 ChatContext: Global message received for conversation:',
+      (message: SocketMessage) => {
+        logger.socket(
+          'ChatContext: Global message received for conversation:',
           message.conversation_id,
           'Content:',
           message.content
@@ -149,18 +257,19 @@ export const ChatProvider = ({ children }) => {
         });
 
         // AUTO-DELIVERY: Mark message as delivered globally (even if not in the specific chat)
-        if (message.sender_id !== user.id) {
+        if (message.sender_id !== user?.id) {
           setTimeout(async () => {
             try {
-              const { messageApiExports } = require('../services/api');
               await messageApiExports.markMessageAsDelivered(message.id);
-              console.log(
-                '✅ Global auto-marked message as delivered:',
+              logger.info(
+                'CHAT',
+                'Global auto-marked message as delivered:',
                 message.id
               );
             } catch (error) {
-              console.error(
-                '❌ Failed to globally auto-mark message as delivered:',
+              logger.error(
+                'CHAT',
+                'Failed to globally auto-mark message as delivered:',
                 error
               );
             }
@@ -169,23 +278,25 @@ export const ChatProvider = ({ children }) => {
       }
     );
 
-    console.log('🔌 ChatContext: Socket listeners set up successfully');
+    logger.socket('ChatContext: Socket listeners set up successfully');
 
     // Cleanup function
     return () => {
-      console.log('🔌 ChatContext: Cleaning up socket listeners');
+      logger.socket('ChatContext: Cleaning up socket listeners');
       unsubscribeNewConversation();
       unsubscribeGlobalMessages();
     };
   }, [isAuthenticated, user?.id]);
 
   // Load conversations list (initial load)
-  const loadConversations = async (refresh = false) => {
+  const loadConversations = async (
+    _refresh: boolean = false
+  ): Promise<void> => {
     dispatch({ type: 'LOADING' });
 
     try {
       const response = await messageApiExports.getConversations(20, 0);
-      const { conversations, total, hasMore } = response.data;
+      const { conversations, hasMore } = response.data;
 
       dispatch({
         type: 'SET_CONVERSATIONS',
@@ -195,13 +306,13 @@ export const ChatProvider = ({ children }) => {
         },
       });
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      logger.error('CHAT', 'Failed to load conversations:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to load conversations' });
     }
   };
 
   // Load more conversations (pagination)
-  const loadMoreConversations = async () => {
+  const loadMoreConversations = async (): Promise<void> => {
     if (state.loadingMore || !state.hasMore) return;
 
     dispatch({ type: 'LOADING_MORE' });
@@ -211,7 +322,7 @@ export const ChatProvider = ({ children }) => {
         20,
         state.currentOffset
       );
-      const { conversations, total, hasMore } = response.data;
+      const { conversations, hasMore } = response.data;
 
       dispatch({
         type: 'APPEND_CONVERSATIONS',
@@ -221,18 +332,18 @@ export const ChatProvider = ({ children }) => {
         },
       });
     } catch (error) {
-      console.error('Failed to load more conversations:', error);
+      logger.error('CHAT', 'Failed to load more conversations:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to load more conversations' });
     }
   };
 
   // Create a new conversation
   const createConversation = async (
-    type,
-    participants,
-    name = null,
-    description = null
-  ) => {
+    type: string,
+    participants: number[],
+    name: string | null = null,
+    description: string | null = null
+  ): Promise<Conversation> => {
     try {
       const response = await messageApiExports.createConversation({
         type,
@@ -246,14 +357,17 @@ export const ChatProvider = ({ children }) => {
 
       return conversation;
     } catch (error) {
-      console.error('Failed to create conversation:', error);
+      logger.error('CHAT', 'Failed to create conversation:', error);
       dispatch({ type: 'ERROR', payload: 'Failed to create conversation' });
       throw error;
     }
   };
 
   // Update conversation (for last message preview)
-  const updateConversation = (conversationId, updates) => {
+  const updateConversation = (
+    conversationId: number,
+    updates: Partial<Conversation>
+  ): void => {
     dispatch({
       type: 'UPDATE_CONVERSATION',
       payload: { id: conversationId, ...updates },
@@ -261,18 +375,21 @@ export const ChatProvider = ({ children }) => {
   };
 
   // Update conversation and re-sort by latest message
-  const updateConversationWithSort = (conversationId, updates) => {
+  const updateConversationWithSort = (
+    conversationId: number,
+    updates: Partial<Conversation>
+  ): void => {
     dispatch({
       type: 'UPDATE_CONVERSATION_WITH_SORT',
       payload: { id: conversationId, ...updates },
     });
   };
 
-  const clearError = () => {
+  const clearError = (): void => {
     dispatch({ type: 'CLEAR_ERROR' });
   };
 
-  const value = {
+  const value: ChatContextType = {
     ...state,
     loadConversations,
     loadMoreConversations,
@@ -285,7 +402,7 @@ export const ChatProvider = ({ children }) => {
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };
 
-export const useChat = () => {
+export const useChat = (): ChatContextType => {
   const context = useContext(ChatContext);
   if (!context) {
     throw new Error('useChat must be used within a ChatProvider');
