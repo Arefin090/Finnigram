@@ -143,11 +143,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         dispatch({
           type: 'LOGIN_SUCCESS',
-          payload: { user: response.data },
+          payload: { user: response.data.user },
         });
 
         logger.auth(
-          `Authentication verified for user: ${response.data.username}`
+          `Authentication verified for user: ${response.data.user.username}`
         );
 
         // Connect socket
@@ -297,12 +297,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const updateUser = (userData: Partial<User>): void => {
-    if (state.user) {
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user: { ...state.user, ...userData } },
-      });
-    }
+    const currentUser = state.user as User; // updateUser should only be called when user exists
+    dispatch({
+      type: 'LOGIN_SUCCESS',
+      payload: { user: { ...currentUser, ...userData } },
+    });
   };
 
   const value: AuthContextType = {
