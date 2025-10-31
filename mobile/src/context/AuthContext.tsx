@@ -1,14 +1,81 @@
-import React, { createContext, useContext, useEffect, useReducer } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useReducer,
+  ReactNode,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApi } from '../services/api';
+import { authApi, type User } from '../services/api';
 import socketService from '../services/socket';
 import logoutService from '../services/LogoutService';
 import logger from '../services/loggerConfig';
 
-const AuthContext = createContext();
+// Type definitions for Auth context
+interface AuthState {
+  loading: boolean;
+  isAuthenticated: boolean;
+  user: User | null;
+  error: string | null;
+}
+
+interface LoginSuccessAction {
+  type: 'LOGIN_SUCCESS';
+  payload: { user: User };
+}
+
+interface LogoutAction {
+  type: 'LOGOUT';
+}
+
+interface LoadingAction {
+  type: 'LOADING';
+}
+
+interface ErrorAction {
+  type: 'ERROR';
+  payload: string;
+}
+
+interface ClearErrorAction {
+  type: 'CLEAR_ERROR';
+}
+
+type AuthAction =
+  | LoginSuccessAction
+  | LogoutAction
+  | LoadingAction
+  | ErrorAction
+  | ClearErrorAction;
+
+interface AuthResponse {
+  success: boolean;
+  error?: string;
+  emergency?: boolean;
+}
+
+interface AuthContextType extends AuthState {
+  login: (email: string, password: string) => Promise<AuthResponse>;
+  register: (
+    email: string,
+    username: string,
+    password: string,
+    displayName: string
+  ) => Promise<AuthResponse>;
+  logout: () => Promise<AuthResponse>;
+  clearError: () => void;
+  updateUser: (userData: Partial<User>) => void;
+  checkAuthStatus: () => Promise<void>;
+}
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Auth reducer
-const authReducer = (state, action) => {
+const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
     case 'LOADING':
       return { ...state, loading: true, error: null };
@@ -46,14 +113,14 @@ const authReducer = (state, action) => {
   }
 };
 
-const initialState = {
+const initialState: AuthState = {
   loading: true,
   isAuthenticated: false,
   user: null,
   error: null,
 };
 
-export const AuthProvider = ({ children }) => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
   // Check for existing auth on app start
@@ -61,13 +128,12 @@ export const AuthProvider = ({ children }) => {
     checkAuthStatus();
   }, []);
 
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = async (): Promise<void> => {
     dispatch({ type: 'LOADING' });
 
     try {
-      const [accessToken, refreshToken, userData] = await AsyncStorage.multiGet(
-        ['accessToken', 'refreshToken', 'user']
-      );
+      const [accessToken, _refreshToken, userData] =
+        await AsyncStorage.multiGet(['accessToken', 'refreshToken', 'user']);
 
       if (accessToken[1] && userData[1]) {
         logger.auth('Found stored tokens, verifying with server...');
@@ -77,11 +143,11 @@ export const AuthProvider = ({ children }) => {
 
         dispatch({
           type: 'LOGIN_SUCCESS',
-          payload: { user: response.data.user },
+          payload: { user: response.data },
         });
 
         logger.auth(
-          `Authentication verified for user: ${response.data.user.username}`
+          `Authentication verified for user: ${response.data.username}`
         );
 
         // Connect socket
@@ -104,7 +170,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<AuthResponse> => {
     dispatch({ type: 'LOADING' });
 
     try {
@@ -139,15 +208,21 @@ export const AuthProvider = ({ children }) => {
       }
 
       return { success: true };
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Login failed';
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } } };
+      const errorMessage = axiosError.response?.data?.error || 'Login failed';
       logger.error('AUTH', `Login failed for ${email}:`, errorMessage);
       dispatch({ type: 'ERROR', payload: errorMessage });
       return { success: false, error: errorMessage };
     }
   };
 
-  const register = async (email, username, password, displayName) => {
+  const register = async (
+    email: string,
+    username: string,
+    password: string,
+    displayName: string
+  ): Promise<AuthResponse> => {
     dispatch({ type: 'LOADING' });
 
     try {
@@ -175,18 +250,24 @@ export const AuthProvider = ({ children }) => {
       try {
         await socketService.connect();
       } catch (socketError) {
-        console.warn('Socket connection failed after register:', socketError);
+        logger.warn(
+          'SOCKET',
+          'Socket connection failed after register:',
+          socketError
+        );
       }
 
       return { success: true };
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Registration failed';
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } } };
+      const errorMessage =
+        axiosError.response?.data?.error || 'Registration failed';
       dispatch({ type: 'ERROR', payload: errorMessage });
       return { success: false, error: errorMessage };
     }
   };
 
-  const logout = async () => {
+  const logout = async (): Promise<AuthResponse> => {
     dispatch({ type: 'LOADING' });
 
     try {
@@ -197,7 +278,7 @@ export const AuthProvider = ({ children }) => {
       dispatch({ type: 'LOGOUT' });
 
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('AUTH', 'Logout failed in AuthContext:', error);
 
       // Emergency state update - ensure user appears logged out
@@ -206,23 +287,25 @@ export const AuthProvider = ({ children }) => {
       return {
         success: true, // User is logged out in UI
         emergency: true,
-        error: error.message,
+        error: (error as Error).message,
       };
     }
   };
 
-  const clearError = () => {
+  const clearError = (): void => {
     dispatch({ type: 'CLEAR_ERROR' });
   };
 
-  const updateUser = userData => {
-    dispatch({
-      type: 'LOGIN_SUCCESS',
-      payload: { user: { ...state.user, ...userData } },
-    });
+  const updateUser = (userData: Partial<User>): void => {
+    if (state.user) {
+      dispatch({
+        type: 'LOGIN_SUCCESS',
+        payload: { user: { ...state.user, ...userData } },
+      });
+    }
   };
 
-  const value = {
+  const value: AuthContextType = {
     ...state,
     login,
     register,
@@ -235,7 +318,7 @@ export const AuthProvider = ({ children }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
