@@ -19,6 +19,7 @@ import { messageApiExports, type User, type Message } from '../services/api';
 import socketService from '../services/socket';
 import messageCache from '../utils/messageCache';
 import logger from '../services/loggerConfig';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { styles } from './ChatScreen.styles';
 
 // Types for route params and navigation
@@ -52,17 +53,8 @@ interface SocketMessage {
   read_at?: string | null;
 }
 
-// Interface for socket service with unsubscribers
-interface SocketServiceWithUnsubscribers {
-  isConnected: boolean;
-  joinConversation: (conversationId: number) => void;
-  leaveConversation: (conversationId: number) => void;
-  on: (event: string, callback: (...args: unknown[]) => void) => () => void;
-  off: (event: string, callback: (...args: unknown[]) => void) => void;
-  startTyping: (conversationId: number) => void;
-  stopTyping: (conversationId: number) => void;
-  _currentUnsubscribers?: (() => void)[] | null;
-}
+// Removed obsolete SocketServiceWithUnsubscribers interface
+// Now using local ref for unsubscribers to prevent memory leaks
 
 interface SocketTypingData {
   conversationId: number;
@@ -112,6 +104,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isNearBottomRef = useRef<boolean>(true); // Assume user starts at bottom
   const shouldScrollToBottomRef = useRef<boolean>(false); // Track if we need to scroll on next render
+  const unsubscribersRef = useRef<(() => void)[]>([]); // Store socket unsubscribers locally
+
+  // Generate unique correlation ID for optimistic messages
+  const generateCorrelationId = (): string => {
+    return `corr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
 
   // Animated values for typing dots
   const dot1Anim = useRef(new Animated.Value(0)).current;
@@ -177,11 +175,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     dot3Anim.setValue(0);
   };
 
-  // Smart scroll that only scrolls if user is near bottom
+  // Smart scroll that only scrolls if user is near bottom (with inverted list, scroll to top)
   const smartScrollToBottom = (animated: boolean = true): void => {
     if (isNearBottomRef.current) {
       setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated });
+        flatListRef.current?.scrollToOffset({ offset: 0, animated });
       }, 100);
     }
   };
@@ -213,13 +211,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         // Add older messages to the beginning, avoiding duplicates
         setMessages(prev => {
           const existingIds = new Set(prev.map(msg => msg.id));
-          const newOlderMessages = olderMessages.filter(
-            msg => !existingIds.has(msg.id)
-          );
+          const existingCorrelationIds = new Set(prev.filter(msg => msg.correlationId).map(msg => msg.correlationId));
+          
+          const newOlderMessages = olderMessages.filter(msg => {
+            // Check for ID duplicates
+            if (existingIds.has(msg.id)) return false;
+            // Check for correlation ID conflicts (unlikely but safety check)
+            const msgWithCorrelation = msg as ChatMessage;
+            if (msgWithCorrelation.correlationId && existingCorrelationIds.has(msgWithCorrelation.correlationId)) return false;
+            return true;
+          });
+          
           return [...(newOlderMessages as ChatMessage[]), ...prev];
         });
         setCurrentMessageOffset(prev => prev + olderMessages.length);
-        logger.debug('CHAT', 'Loaded', olderMessages.length, 'older messages');
       }
     } catch (error) {
       logger.error('CHAT', 'Failed to load older messages:', error);
@@ -261,29 +266,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     }, 500); // Small delay to ensure messages are loaded first
 
     return () => {
+      // Clear typing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      
       socketService.off('connect', handleSocketConnect);
       leaveConversation();
+      cleanupSocketListeners(); // Ensure all listeners are cleaned up
     };
   }, [conversationId]);
 
-  // Load messages with cache-first strategy
+  // Load messages with cache-first strategy for instant UX
   const loadMessages = async (): Promise<void> => {
-    setLoading(true);
-
     try {
-      // 1. Try to load from cache first for instant display
+      // 1. Check cache first and show immediately if available
       logger.debug('CACHE', 'Checking cache for conversation:', conversationId);
       const cachedMessages =
         await messageCache.getSmartCachedMessages(conversationId);
 
-      // Use cached messages to speed up perceived loading, but don't show them yet
+      let hasCachedData = false;
       if (cachedMessages && cachedMessages.length > 0) {
+        // Show cached messages IMMEDIATELY - no skeleton loading
+        setMessages(cachedMessages as ChatMessage[]);
+        setCurrentMessageOffset(cachedMessages.length);
+        setHasMoreMessages(cachedMessages.length >= 30);
+        setLoading(false); // Hide skeleton immediately
+        shouldScrollToBottomRef.current = true;
+        
+        hasCachedData = true;
         logger.performance(
-          'Found',
+          'CACHE',
+          'Showing',
           cachedMessages.length,
-          'cached messages - will show after fresh data loads'
+          'cached messages instantly'
         );
-        // Don't setMessages() or setLoading(false) here - keep skeleton until fresh data
+      } else {
+        // No cache available, show skeleton while loading
+        setLoading(true);
       }
 
       // 2. Fetch only RECENT messages from API (progressive loading)
@@ -299,8 +320,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       );
       const freshMessages = response.data.messages || [];
 
-      // 3. Conflict resolution: Compare cached vs fresh data
-      if (cachedMessages && cachedMessages.length > 0) {
+      // 3. Update with fresh data (background refresh)
+      if (hasCachedData) {
         // Check for conflicts (messages that changed or were deleted)
         const hasConflicts =
           cachedMessages.length !== freshMessages.length ||
@@ -312,39 +333,40 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           });
 
         if (hasConflicts) {
-          logger.warn('CACHE', 'Cache conflicts detected, refreshing from API');
+          logger.info('CACHE', 'Fresh data differs from cache, updating display');
+          setMessages(freshMessages as ChatMessage[]);
+          setCurrentMessageOffset(freshMessages.length);
+          setHasMoreMessages(freshMessages.length >= INITIAL_MESSAGE_LIMIT);
           await messageCache.refreshCacheFromAPI(conversationId, freshMessages);
-          // Set high priority for active conversation
-          await messageCache.setConversationPriority(conversationId, 'high');
         } else {
-          logger.debug('CACHE', 'Cache is up to date');
-          await messageCache.smartCacheMessages(
-            conversationId,
-            freshMessages,
-            'high'
-          );
+          logger.debug('CACHE', 'Cache is up to date, no refresh needed');
         }
+        
+        // Set high priority for active conversation
+        await messageCache.setConversationPriority(conversationId, 'high');
       } else {
+        // No cached data, show fresh messages from API
+        setMessages(freshMessages as ChatMessage[]);
+        setCurrentMessageOffset(freshMessages.length);
+        setHasMoreMessages(freshMessages.length >= INITIAL_MESSAGE_LIMIT);
+        shouldScrollToBottomRef.current = true;
+        
         await messageCache.smartCacheMessages(
           conversationId,
           freshMessages,
           'high'
         );
+        
+        logger.performance(
+          'API',
+          'Loaded',
+          freshMessages.length,
+          'messages from API'
+        );
       }
 
-      // Show fresh messages with smooth transition
-      setMessages(freshMessages as ChatMessage[]);
-      setCurrentMessageOffset(freshMessages.length);
-      setHasMoreMessages(freshMessages.length >= INITIAL_MESSAGE_LIMIT);
-
-      logger.performance(
-        'Loaded',
-        freshMessages.length,
-        'recent messages from API - progressive loading enabled'
-      );
-
-      // Mark that we need to scroll to bottom when FlatList renders
-      shouldScrollToBottomRef.current = true;
+      // Background refresh completed
+      logger.debug('CHAT', 'Message loading completed');
     } catch (error) {
       logger.error('CHAT', 'Failed to load messages:', error);
       Alert.alert('Error', 'Failed to load messages');
@@ -378,8 +400,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
               messageType: queuedMsg.message_type,
             });
 
-            // Remove optimistic message - socket will add the real one
-            setMessages(prev => prev.filter(msg => msg.id !== queuedMsg.id));
+            // Note: Optimistic message will be automatically replaced by socket handler
+            // when the real message arrives, so no need to manually remove it here
           } catch (error) {
             logger.error('CHAT', 'Failed to send queued message:', error);
             setMessages(prev =>
@@ -443,10 +465,36 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
               return prevMessages;
             }
 
+            // Check if this message should replace an optimistic message
+            // (when sender_id matches current user, it's likely our optimistic message being confirmed)
+            const isOurMessage = message.sender_id === user.id;
+            let newMessages = [...prevMessages];
+
+            if (isOurMessage) {
+              // Look for optimistic message with similar content and timestamp to replace
+              const optimisticIndex = prevMessages.findIndex(m => 
+                m.isOptimistic && 
+                m.content === message.content &&
+                m.sender_id === message.sender_id &&
+                Math.abs(new Date(m.created_at).getTime() - new Date(message.created_at).getTime()) < 10000 // Within 10 seconds
+              );
+
+              if (optimisticIndex !== -1) {
+                // Replace optimistic message with real message
+                newMessages = [...prevMessages];
+                newMessages[optimisticIndex] = { ...message as ChatMessage, isOptimistic: false };
+                logger.debug('CHAT', 'Replaced optimistic message with real message:', message.id);
+              } else {
+                // Add as new message (couldn't find matching optimistic message)
+                newMessages = [...prevMessages, { ...message as ChatMessage, isOptimistic: false }];
+              }
+            } else {
+              // Message from another user, just add it
+              newMessages = [...prevMessages, { ...message as ChatMessage, isOptimistic: false }];
+            }
+
             // Add new message to cache
             messageCache.addMessageToCache(conversationId, message);
-
-            const newMessages = [...prevMessages, message as ChatMessage];
 
             // Update conversation preview in global state (defer to avoid render cycle conflicts)
             setTimeout(() => {
@@ -474,7 +522,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         if (data.conversationId === conversationId && data.userId !== user.id) {
           setTypingUsers(prevTyping => {
             if (data.isTyping) {
-              return [...new Set([...prevTyping, data.userId])];
+              return prevTyping.includes(data.userId) 
+                ? prevTyping 
+                : [...prevTyping, data.userId];
             } else {
               return prevTyping.filter(id => id !== data.userId);
             }
@@ -548,8 +598,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       }
     );
 
-    // Store unsubscribe functions for cleanup
-    (socketService as SocketServiceWithUnsubscribers)._currentUnsubscribers = [
+    // Store unsubscribe functions locally for cleanup
+    unsubscribersRef.current = [
       unsubscribeNewMessage,
       unsubscribeTyping,
       unsubscribeMessageDelivered,
@@ -560,13 +610,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
   // Clean up socket listeners
   const cleanupSocketListeners = (): void => {
-    const socketWithUnsubscribers =
-      socketService as SocketServiceWithUnsubscribers;
-    if (socketWithUnsubscribers._currentUnsubscribers) {
-      socketWithUnsubscribers._currentUnsubscribers.forEach(
-        (unsubscribe: () => void) => unsubscribe()
-      );
-      socketWithUnsubscribers._currentUnsubscribers = null;
+    if (unsubscribersRef.current.length > 0) {
+      unsubscribersRef.current.forEach((unsubscribe: () => void) => {
+        try {
+          unsubscribe();
+        } catch (error) {
+          logger.error('CHAT', 'Error unsubscribing from socket event:', error);
+        }
+      });
+      unsubscribersRef.current = [];
     }
   };
 
@@ -575,7 +627,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     const text = messageText.trim();
     if (!text) return;
 
-    // Create optimistic message
+    // Create optimistic message with correlation ID
+    const correlationId = generateCorrelationId();
     const optimisticMessage: ChatMessage = {
       id: `temp_${Date.now()}`, // Temporary ID
       content: text,
@@ -587,6 +640,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       attachments: [],
       delivered_at: null,
       read_at: null,
+      correlationId,
+      isOptimistic: true,
     };
 
     // If still loading, queue the message; otherwise send immediately
@@ -615,7 +670,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
     // Always scroll for user's own messages (they expect to see what they sent)
     setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     }, 100);
 
     // Stop typing indicator
@@ -632,8 +687,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
       logger.info('CHAT', 'Message sent successfully');
 
-      // Remove optimistic message - socket will add the real one
-      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+      // Note: Optimistic message will be automatically replaced by socket handler
+      // when the real message arrives, so no need to manually remove it here
     } catch (error) {
       logger.error('CHAT', 'Failed to send message:', error);
       Alert.alert('Error', 'Failed to send message');
@@ -937,14 +992,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       ) : (
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={[...messages].reverse()} // Reverse for inverted display
           renderItem={renderMessage}
-          keyExtractor={(item, index) =>
-            item.id ? `msg-${item.id}` : `unknown-${index}-${Date.now()}`
-          }
+          keyExtractor={(item, index) => {
+            // Use correlation ID for optimistic messages to ensure uniqueness
+            if (item.isOptimistic && item.correlationId) {
+              return `opt-${item.correlationId}`;
+            }
+            // Use message ID for real messages
+            if (item.id) {
+              return `msg-${item.id}`;
+            }
+            // Fallback for messages without ID (should rarely happen)
+            return `unknown-${index}-${item.created_at}-${Math.random().toString(36).substr(2, 5)}`;
+          }}
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContainer}
-          ListHeaderComponent={() =>
+          inverted={true} // Show newest at bottom naturally
+          ListHeaderComponent={renderTypingIndicator} // Typing dots appear at "top" of inverted list (bottom visually)
+          ListFooterComponent={() =>
             loadingOlderMessages ? (
               <View style={styles.loadingOlderContainer}>
                 <Text style={styles.loadingOlderText}>
@@ -953,49 +1019,50 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
               </View>
             ) : null
           }
-          ListFooterComponent={renderTypingIndicator}
           onScroll={event => {
             const { contentOffset, contentSize, layoutMeasurement } =
               event.nativeEvent;
 
-            // Check if user scrolled near top for loading older messages
-            const isNearTop = contentOffset.y < 100;
-            if (isNearTop && hasMoreMessages && !loadingOlderMessages) {
+            // With inverted FlatList, check if user scrolled near the end (older messages)
+            const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            const isNearOlderMessages = distanceFromEnd < 100;
+            
+            if (isNearOlderMessages && hasMoreMessages && !loadingOlderMessages) {
               loadOlderMessages();
             }
 
-            // Track if user is near bottom (within 100px of bottom)
-            const distanceFromBottom =
-              contentSize.height - layoutMeasurement.height - contentOffset.y;
+            // With inverted list, near "bottom" (newest messages) is when scroll is near top
+            const distanceFromBottom = contentOffset.y;
             isNearBottomRef.current = distanceFromBottom < 100;
           }}
           scrollEventThrottle={100}
           onLayout={() => {
-            // Scroll to bottom when FlatList first renders or when flagged to do so
+            // Immediate scroll when FlatList first renders
             if (shouldScrollToBottomRef.current) {
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: false });
+              // Use multiple attempts to ensure scroll happens reliably (inverted list scrolls to top)
+              const scrollToBottom = () => {
+                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
                 isNearBottomRef.current = true;
+              };
+              
+              // Immediate attempt
+              scrollToBottom();
+              
+              // Backup attempts for reliability
+              setTimeout(scrollToBottom, 10);
+              setTimeout(scrollToBottom, 50);
+              setTimeout(() => {
+                scrollToBottom();
                 shouldScrollToBottomRef.current = false;
-                logger.debug(
-                  'CHAT',
-                  'Scrolled to bottom after FlatList layout'
-                );
-              }, 50);
+                logger.debug('CHAT', 'Completed scroll to bottom sequence');
+              }, 100);
             }
           }}
           onContentSizeChange={() => {
-            // Also scroll when content size changes (e.g., new messages added)
+            // Handle content size changes (new messages) with inverted list
             if (shouldScrollToBottomRef.current) {
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: false });
-                isNearBottomRef.current = true;
-                shouldScrollToBottomRef.current = false;
-                logger.debug(
-                  'CHAT',
-                  'Scrolled to bottom after content size change'
-                );
-              }, 50);
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              isNearBottomRef.current = true;
             }
           }}
           ListEmptyComponent={() => (
@@ -1050,4 +1117,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   );
 };
 
-export default ChatScreen;
+// Wrap ChatScreen with ErrorBoundary for crash protection
+const ChatScreenWithErrorBoundary: React.FC<ChatScreenProps> = (props) => (
+  <ErrorBoundary
+    onError={(error, errorInfo) => {
+      logger.error('CHAT', 'ChatScreen crashed:', error, errorInfo);
+    }}
+  >
+    <ChatScreen {...props} />
+  </ErrorBoundary>
+);
+
+export default ChatScreenWithErrorBoundary;
