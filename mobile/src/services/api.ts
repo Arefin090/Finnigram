@@ -1,10 +1,10 @@
-import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosInstance,
+  AxiosResponse,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  USER_SERVICE_URL,
-  MESSAGE_SERVICE_URL,
-  REALTIME_SERVICE_URL,
-} from '../config/environment';
+import { USER_SERVICE_URL, MESSAGE_SERVICE_URL } from '../config/environment';
 
 // Type definitions for better type safety
 interface User {
@@ -28,7 +28,7 @@ interface Message {
   created_at: string;
   delivered_at?: string | null;
   read_at?: string | null;
-  attachments?: any[];
+  attachments?: unknown[];
 }
 
 interface Conversation {
@@ -88,14 +88,16 @@ const messageApi: AxiosInstance = axios.create({
 // Request interceptors to add auth tokens
 const addAuthInterceptor = (apiInstance: AxiosInstance): void => {
   apiInstance.interceptors.request.use(
-    async (config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> => {
+    async (
+      config: InternalAxiosRequestConfig
+    ): Promise<InternalAxiosRequestConfig> => {
       const token = await AsyncStorage.getItem('accessToken');
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
     },
-    (error: any) => Promise.reject(error)
+    (error: Error) => Promise.reject(error)
   );
 };
 
@@ -103,7 +105,10 @@ const addAuthInterceptor = (apiInstance: AxiosInstance): void => {
 const addResponseInterceptor = (apiInstance: AxiosInstance): void => {
   apiInstance.interceptors.response.use(
     (response: AxiosResponse) => response,
-    async (error: any) => {
+    async (error: {
+      config: InternalAxiosRequestConfig & { _retry?: boolean };
+      response?: { status: number };
+    }) => {
       const originalRequest = error.config;
 
       if (error.response?.status === 401 && !originalRequest._retry) {
@@ -124,7 +129,7 @@ const addResponseInterceptor = (apiInstance: AxiosInstance): void => {
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return apiInstance(originalRequest);
           }
-        } catch (refreshError) {
+        } catch {
           // Refresh failed, redirect to login
           await AsyncStorage.multiRemove([
             'accessToken',
@@ -147,91 +152,130 @@ addResponseInterceptor(messageApi);
 
 // Auth API
 export const authApi = {
-  login: (email: string, password: string): Promise<AxiosResponse<LoginResponse>> =>
+  login: (
+    email: string,
+    password: string
+  ): Promise<AxiosResponse<LoginResponse>> =>
     userApi.post('/auth/login', { email, password }),
-  
-  register: (email: string, username: string, password: string, displayName?: string): Promise<AxiosResponse<LoginResponse>> =>
+
+  register: (
+    email: string,
+    username: string,
+    password: string,
+    displayName?: string
+  ): Promise<AxiosResponse<LoginResponse>> =>
     userApi.post('/auth/register', { email, username, password, displayName }),
-  
-  logout: (): Promise<AxiosResponse<void>> => 
+
+  logout: (): Promise<AxiosResponse<void>> =>
     userApi.post('/auth/logout', {}, { timeout: 5000 }), // 5 second timeout
-  
-  getCurrentUser: (): Promise<AxiosResponse<User>> => 
-    userApi.get('/auth/me'),
-  
-  refreshToken: (refreshToken: string): Promise<AxiosResponse<{ tokens: { accessToken: string; refreshToken: string } }>> => 
-    userApi.post('/auth/refresh', { refreshToken }),
+
+  getCurrentUser: (): Promise<AxiosResponse<User>> => userApi.get('/auth/me'),
+
+  refreshToken: (
+    refreshToken: string
+  ): Promise<
+    AxiosResponse<{ tokens: { accessToken: string; refreshToken: string } }>
+  > => userApi.post('/auth/refresh', { refreshToken }),
 };
 
 // User API
 export const userApiExports = {
-  getProfile: (userId: number): Promise<AxiosResponse<User>> => 
+  getProfile: (userId: number): Promise<AxiosResponse<User>> =>
     userApi.get(`/users/${userId}`),
-  
-  updateProfile: (data: Partial<User>): Promise<AxiosResponse<User>> => 
+
+  updateProfile: (data: Partial<User>): Promise<AxiosResponse<User>> =>
     userApi.patch('/users/me', data),
-  
-  searchUsers: (query: string, limit: number = 10): Promise<AxiosResponse<{ users: User[] }>> =>
+
+  searchUsers: (
+    query: string,
+    limit: number = 10
+  ): Promise<AxiosResponse<{ users: User[] }>> =>
     userApi.get('/users', { params: { q: query, limit } }),
 };
 
 // Message API
 export const messageApiExports = {
-  getConversations: (): Promise<AxiosResponse<{ conversations: Conversation[] }>> => 
-    messageApi.get('/conversations'),
-  
-  createConversation: (data: CreateConversationRequest): Promise<AxiosResponse<Conversation>> => 
+  getConversations: (
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<
+    AxiosResponse<{
+      conversations: Conversation[];
+      total?: number;
+      hasMore?: boolean;
+    }>
+  > => messageApi.get('/conversations', { params: { limit, offset } }),
+
+  createConversation: (
+    data: CreateConversationRequest
+  ): Promise<AxiosResponse<Conversation>> =>
     messageApi.post('/conversations', data),
-  
-  getConversation: (id: number): Promise<AxiosResponse<Conversation>> => 
+
+  getConversation: (id: number): Promise<AxiosResponse<Conversation>> =>
     messageApi.get(`/conversations/${id}`),
-  
-  addParticipant: (conversationId: number, userId: number): Promise<AxiosResponse<void>> =>
+
+  addParticipant: (
+    conversationId: number,
+    userId: number
+  ): Promise<AxiosResponse<void>> =>
     messageApi.post(`/conversations/${conversationId}/participants`, {
       userId,
     }),
-  
-  removeParticipant: (conversationId: number, userId: number): Promise<AxiosResponse<void>> =>
+
+  removeParticipant: (
+    conversationId: number,
+    userId: number
+  ): Promise<AxiosResponse<void>> =>
     messageApi.delete(
       `/conversations/${conversationId}/participants/${userId}`
     ),
-  
+
   markAsRead: (conversationId: number): Promise<AxiosResponse<void>> =>
     messageApi.patch(`/conversations/${conversationId}/read`),
-  
+
   markMessageAsDelivered: (messageId: number): Promise<AxiosResponse<void>> =>
     messageApi.patch(`/messages/${messageId}/delivered`),
-  
+
   markMessageAsRead: (messageId: number): Promise<AxiosResponse<void>> =>
     messageApi.patch(`/messages/${messageId}/read`),
-  
-  getMessages: (conversationId: number, limit: number = 50, offset: number = 0): Promise<AxiosResponse<{ messages: Message[] }>> =>
+
+  getMessages: (
+    conversationId: number,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<AxiosResponse<{ messages: Message[] }>> =>
     messageApi.get(`/messages/conversations/${conversationId}`, {
-      params: { limit, offset },
+      params: { limit, offset, order: 'asc' }, // Request messages in chronological order
     }),
-  
-  sendMessage: (data: SendMessageRequest): Promise<AxiosResponse<Message>> => 
+
+  sendMessage: (data: SendMessageRequest): Promise<AxiosResponse<Message>> =>
     messageApi.post('/messages', data),
-  
-  editMessage: (messageId: number, content: string): Promise<AxiosResponse<Message>> =>
+
+  editMessage: (
+    messageId: number,
+    content: string
+  ): Promise<AxiosResponse<Message>> =>
     messageApi.patch(`/messages/${messageId}`, { content }),
-  
-  deleteMessage: (messageId: number): Promise<AxiosResponse<void>> => 
+
+  deleteMessage: (messageId: number): Promise<AxiosResponse<void>> =>
     messageApi.delete(`/messages/${messageId}`),
-  
-  searchMessages: (query: string, limit: number = 20): Promise<AxiosResponse<{ messages: Message[] }>> =>
+
+  searchMessages: (
+    query: string,
+    limit: number = 20
+  ): Promise<AxiosResponse<{ messages: Message[] }>> =>
     messageApi.get('/messages/search', { params: { q: query, limit } }),
 };
 
 export { userApi, messageApi };
 
 // Export types for use in other files
-export type { 
-  User, 
-  Message, 
-  Conversation, 
-  LoginResponse, 
-  RegisterRequest, 
-  SendMessageRequest, 
-  CreateConversationRequest 
+export type {
+  User,
+  Message,
+  Conversation,
+  LoginResponse,
+  RegisterRequest,
+  SendMessageRequest,
+  CreateConversationRequest,
 };
