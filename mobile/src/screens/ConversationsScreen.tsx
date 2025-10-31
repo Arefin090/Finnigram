@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { styles } from './ConversationsScreen.styles';
 
 // Enable LayoutAnimation for Android
@@ -500,4 +501,15 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
   );
 };
 
-export default ConversationsScreen;
+// Wrap ConversationsScreen with ErrorBoundary for crash protection
+const ConversationsScreenWithErrorBoundary: React.FC<ConversationsScreenProps> = (props) => (
+  <ErrorBoundary
+    onError={(error, errorInfo) => {
+      console.error('ConversationsScreen crashed:', error, errorInfo);
+    }}
+  >
+    <ConversationsScreen {...props} />
+  </ErrorBoundary>
+);
+
+export default ConversationsScreenWithErrorBoundary;
