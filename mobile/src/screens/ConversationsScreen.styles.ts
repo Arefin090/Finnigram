@@ -313,4 +313,19 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // Loading Footer Styles
+  loadingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: '#F2F2F7',
+  },
+  loadingFooterText: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
 });

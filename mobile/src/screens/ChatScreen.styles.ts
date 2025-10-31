@@ -7,7 +7,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -19,7 +19,7 @@ export const styles = StyleSheet.create({
     color: '#8E8E93',
     fontWeight: '500',
   },
-  
+
   messagesList: {
     flex: 1,
   },
@@ -278,5 +278,18 @@ export const styles = StyleSheet.create({
     height: 12,
     backgroundColor: '#E5E5EA',
     borderRadius: 6,
+  },
+
+  // Loading older messages styles
+  loadingOlderContainer: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+  },
+  loadingOlderText: {
+    fontSize: 14,
+    color: '#8E8E93',
+    fontWeight: '500',
   },
 });
