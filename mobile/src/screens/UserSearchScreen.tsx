@@ -8,25 +8,34 @@ import {
   StyleSheet,
   Alert,
   Platform,
-  Dimensions,
+  ListRenderItem,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
-import { userApiExports, messageApiExports } from '../services/api';
+import { userApiExports, messageApiExports, type User } from '../services/api';
 import { useChat } from '../context/ChatContext';
 
-const { width } = Dimensions.get('window');
+// Types for navigation prop
+interface Navigation {
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+  goBack: () => void;
+}
 
-const UserSearchScreen = ({ navigation }) => {
+interface UserSearchScreenProps {
+  navigation: Navigation;
+}
+
+const UserSearchScreen: React.FC<UserSearchScreenProps> = ({ navigation }) => {
   const { user } = useAuth();
   const { loadConversations } = useChat();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [creatingConversation, setCreatingConversation] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [creatingConversation, setCreatingConversation] =
+    useState<boolean>(false);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -41,7 +50,7 @@ const UserSearchScreen = ({ navigation }) => {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (): Promise<void> => {
     if (!searchQuery.trim()) return;
 
     setIsLoading(true);
@@ -49,11 +58,10 @@ const UserSearchScreen = ({ navigation }) => {
 
     try {
       const response = await userApiExports.searchUsers(searchQuery.trim());
-      // Filter out current user  
+      // Filter out current user
       const filteredResults = response.data.users.filter(u => u.id !== user.id);
       setSearchResults(filteredResults);
-    } catch (error) {
-      console.error('Search error:', error);
+    } catch {
       Alert.alert('Error', 'Failed to search users. Please try again.');
       setSearchResults([]);
     } finally {
@@ -61,30 +69,27 @@ const UserSearchScreen = ({ navigation }) => {
     }
   };
 
-  const handleStartConversation = async (selectedUser) => {
+  const handleStartConversation = async (selectedUser: User): Promise<void> => {
     if (creatingConversation) return;
-    
+
     setCreatingConversation(true);
-    
+
     try {
-      console.log('🚀 Starting conversation with user:', selectedUser);
-      
       // Create a direct conversation
       const conversationData = {
-        type: 'direct',
-        participants: [selectedUser.id],
+        type: 'direct' as const,
+        participantIds: [selectedUser.id],
       };
-      
-      const response = await messageApiExports.createConversation(conversationData);
+
+      const response =
+        await messageApiExports.createConversation(conversationData);
       const conversation = response.data.conversation;
-      
-      console.log('✅ Conversation created:', conversation);
-      
+
       // Small delay to allow real-time sync
       setTimeout(async () => {
         // Refresh conversations list to ensure it appears
         await loadConversations();
-        
+
         // Navigate to the new conversation
         navigation.navigate('Chat', {
           conversationId: conversation.id,
@@ -92,20 +97,25 @@ const UserSearchScreen = ({ navigation }) => {
           conversationType: 'direct',
         });
       }, 500);
-      
-    } catch (error) {
-      console.error('❌ Start conversation error:', error);
+    } catch {
       Alert.alert('Error', 'Failed to start conversation. Please try again.');
     } finally {
       setCreatingConversation(false);
     }
   };
 
-  const getInitials = (name) => {
-    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U';
+  const getInitials = (name: string): string => {
+    return name
+      ? name
+          .split(' ')
+          .map(n => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2)
+      : 'U';
   };
 
-  const renderUser = ({ item }) => (
+  const renderUser: ListRenderItem<User> = ({ item }) => (
     <TouchableOpacity
       style={styles.userItem}
       onPress={() => handleStartConversation(item)}
@@ -121,14 +131,14 @@ const UserSearchScreen = ({ navigation }) => {
           {getInitials(item.displayName || item.username)}
         </Text>
       </LinearGradient>
-      
+
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>
           {item.displayName || item.username}
         </Text>
         <Text style={styles.username}>@{item.username}</Text>
       </View>
-      
+
       {creatingConversation ? (
         <Text style={styles.loadingText}>Starting...</Text>
       ) : (
@@ -137,7 +147,7 @@ const UserSearchScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-  const renderEmpty = () => {
+  const renderEmpty = (): React.ReactElement => {
     if (isLoading) {
       return (
         <View style={styles.emptyContainer}>
@@ -179,7 +189,7 @@ const UserSearchScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      
+
       {/* Header */}
       <LinearGradient
         colors={['#667eea', '#764ba2']}
@@ -188,7 +198,7 @@ const UserSearchScreen = ({ navigation }) => {
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.headerContent}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
@@ -224,14 +234,16 @@ const UserSearchScreen = ({ navigation }) => {
           )}
         </View>
       </View>
-      
+
       {/* Results */}
       <FlatList
         data={searchResults}
         renderItem={renderUser}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={item => item.id.toString()}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={searchResults.length === 0 ? styles.emptyList : styles.listContent}
+        contentContainerStyle={
+          searchResults.length === 0 ? styles.emptyList : styles.listContent
+        }
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -244,7 +256,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
-  
+
   // Header Styles
   header: {
     paddingTop: Platform.OS === 'ios' ? 50 : 25,
@@ -317,7 +329,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     backgroundColor: '#FFFFFF',
-    cursor: 'pointer',
   },
   avatar: {
     width: 50,
