@@ -22,10 +22,10 @@ interface SocketConnectionData {
 class SocketService {
   private socket: Socket | null = null;
   private listeners: Map<string, SocketEventCallback[]> = new Map();
-  
+
   // Connection state
   public isConnected: boolean = false;
-  
+
   // Reconnection properties
   private reconnectAttempts: number = 0;
   private readonly maxReconnectAttempts: number = 10;
@@ -38,7 +38,9 @@ class SocketService {
     // All initialization is done in property declarations above
   }
 
-  public async connect(isReconnect: boolean = false): Promise<SocketConnectionData> {
+  public async connect(
+    isReconnect: boolean = false
+  ): Promise<SocketConnectionData> {
     try {
       const token = await AsyncStorage.getItem('accessToken');
 
@@ -65,14 +67,14 @@ class SocketService {
 
         this.socket.on('connected', (data: SocketConnectionData) => {
           this.isConnected = true;
-          
+
           // Reset reconnection state on successful connection
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000;
-          
+
           // Process queued messages
           this.processMessageQueue();
-          
+
           logger.socket('Socket connected:', data);
           resolve(data);
         });
@@ -80,19 +82,19 @@ class SocketService {
         this.socket.on('connect_error', (error: Error) => {
           logger.error('SOCKET', 'Socket connection error:', error);
           this.isConnected = false;
-          
+
           // Attempt reconnection if not max attempts reached
           if (!isReconnect) {
             this.scheduleReconnect();
           }
-          
+
           reject(error);
         });
 
         this.socket.on('disconnect', (reason: string) => {
           logger.socket('Socket disconnected:', reason);
           this.isConnected = false;
-          
+
           // Auto-reconnect unless disconnect was intentional
           if (reason !== 'io client disconnect') {
             this.scheduleReconnect();
@@ -118,31 +120,40 @@ class SocketService {
     }
 
     this.reconnectAttempts++;
-    
-    logger.info('SOCKET', `Scheduling reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay}ms`);
+
+    logger.info(
+      'SOCKET',
+      `Scheduling reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay}ms`
+    );
 
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.connect(true);
       } catch (error) {
         logger.error('SOCKET', 'Reconnection attempt failed:', error);
-        
+
         // Exponential backoff - double the delay up to max
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+        this.reconnectDelay = Math.min(
+          this.reconnectDelay * 2,
+          this.maxReconnectDelay
+        );
       }
     }, this.reconnectDelay);
   }
 
   private processMessageQueue(): void {
     if (this.messageQueue.length > 0) {
-      logger.info('SOCKET', `Processing ${this.messageQueue.length} queued messages`);
-      
+      logger.info(
+        'SOCKET',
+        `Processing ${this.messageQueue.length} queued messages`
+      );
+
       this.messageQueue.forEach(message => {
         if (this.socket && this.isConnected) {
           this.socket.emit(message.event, message.data);
         }
       });
-      
+
       this.messageQueue = [];
     }
   }
@@ -164,9 +175,14 @@ class SocketService {
 
     // Forward events to registered listeners
     this.socket.onAny((eventName: string, ...args: unknown[]) => {
-      console.log('🔊 Socket received event:', eventName, 'with args:', args);
+      logger.socket('Socket received event:', eventName, 'with args:', args);
       const listeners = this.listeners.get(eventName) || [];
-      console.log('🔊 Socket forwarding to', listeners.length, 'listeners for event:', eventName);
+      logger.socket(
+        'Socket forwarding to',
+        listeners.length,
+        'listeners for event:',
+        eventName
+      );
       listeners.forEach(callback => callback(...args));
     });
   }
@@ -177,11 +193,11 @@ class SocketService {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
     // Reset reconnection state
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
-    
+
     if (this.socket) {
       // Emit user_offline before disconnecting if still connected
       if (this.isConnected) {
@@ -227,9 +243,13 @@ class SocketService {
       this.socket.emit(eventName, data);
     } else {
       // Queue message for when connection is restored
-      logger.info('SOCKET', 'Socket not connected, queuing message:', eventName);
+      logger.info(
+        'SOCKET',
+        'Socket not connected, queuing message:',
+        eventName
+      );
       this.messageQueue.push({ event: eventName, data });
-      
+
       // Try to reconnect if not already attempting
       if (this.reconnectAttempts === 0) {
         this.scheduleReconnect();
