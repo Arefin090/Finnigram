@@ -10,7 +10,7 @@ interface SocketEventCallback {
 
 interface QueuedMessage {
   event: string;
-  data: unknown;
+  data?: unknown;
 }
 
 interface SocketConnectionData {
@@ -150,7 +150,11 @@ class SocketService {
 
       this.messageQueue.forEach(message => {
         if (this.socket && this.isConnected) {
-          this.socket.emit(message.event, message.data);
+          if (message.data !== undefined) {
+            this.socket.emit(message.event, message.data);
+          } else {
+            this.socket.emit(message.event);
+          }
         }
       });
 
@@ -238,9 +242,13 @@ class SocketService {
     }
   }
 
-  public emit(eventName: string, data: unknown): void {
+  public emit(eventName: string, data?: unknown): void {
     if (this.socket && this.isConnected) {
-      this.socket.emit(eventName, data);
+      if (data !== undefined) {
+        this.socket.emit(eventName, data);
+      } else {
+        this.socket.emit(eventName);
+      }
     } else {
       // Queue message for when connection is restored
       logger.info(

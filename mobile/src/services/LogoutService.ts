@@ -7,23 +7,50 @@ import socketService from './socket';
 import retryService from './RetryService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import logger from './loggerConfig';
+import { AxiosResponse } from 'axios';
+
+// Type definitions
+interface LogoutMetrics {
+  startTime: number | null;
+  serverLogoutSuccess: boolean;
+  socketDisconnected: boolean;
+  cleanupSuccess: boolean;
+  duration: number;
+}
+
+interface LogoutResult {
+  success: boolean;
+  duration?: number;
+  error?: string;
+  serverLogoutSuccess?: boolean;
+  socketDisconnected?: boolean;
+  cleanupSuccess?: boolean;
+  emergency?: boolean;
+  originalError?: string;
+}
+
+interface NetworkConfig {
+  baseDelay: number;
+}
 
 export class LogoutService {
+  private isLoggingOut: boolean = false;
+  private logoutMetrics: LogoutMetrics = {
+    startTime: null,
+    serverLogoutSuccess: false,
+    socketDisconnected: false,
+    cleanupSuccess: false,
+    duration: 0,
+  };
+
   constructor() {
-    this.isLoggingOut = false;
-    this.logoutMetrics = {
-      startTime: null,
-      serverLogoutSuccess: false,
-      socketDisconnected: false,
-      cleanupSuccess: false,
-      duration: 0,
-    };
+    // Properties initialized above
   }
 
   /**
    * Execute complete logout process with comprehensive cleanup
    */
-  async executeLogout() {
+  async executeLogout(): Promise<LogoutResult> {
     if (this.isLoggingOut) {
       logger.warn(
         'AUTH',
@@ -43,7 +70,7 @@ export class LogoutService {
       logger.auth(`Logout completed successfully in ${result.duration}ms`);
       logger.groupEnd();
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('AUTH', 'Critical error during logout:', error);
       logger.groupEnd();
 
@@ -58,7 +85,7 @@ export class LogoutService {
   /**
    * Reset metrics for new logout attempt
    */
-  resetMetrics() {
+  private resetMetrics(): void {
     this.logoutMetrics = {
       startTime: Date.now(),
       serverLogoutSuccess: false,
@@ -71,7 +98,7 @@ export class LogoutService {
   /**
    * Main logout process
    */
-  async performLogout() {
+  private async performLogout(): Promise<LogoutResult> {
     // Step 1: Graceful socket disconnection
     await this.handleSocketDisconnection();
 
@@ -82,7 +109,8 @@ export class LogoutService {
     await this.handleLocalCleanup();
 
     // Step 4: Calculate final metrics
-    this.logoutMetrics.duration = Date.now() - this.logoutMetrics.startTime;
+    this.logoutMetrics.duration =
+      Date.now() - (this.logoutMetrics.startTime || 0);
 
     return {
       success: true,
@@ -93,7 +121,7 @@ export class LogoutService {
   /**
    * Handle socket disconnection with verification
    */
-  async handleSocketDisconnection() {
+  private async handleSocketDisconnection(): Promise<void> {
     logger.auth('Initiating socket disconnection...');
 
     try {
@@ -104,7 +132,8 @@ export class LogoutService {
         socketService.emit('user_offline');
 
         // Network-aware delay for graceful disconnection
-        const networkConfig = await retryService.getNetworkAwareConfig();
+        const networkConfig =
+          (await retryService.getNetworkAwareConfig()) as NetworkConfig;
         const delay = Math.min(networkConfig.baseDelay / 2, 1000);
         await this.delay(delay);
       }
@@ -120,7 +149,7 @@ export class LogoutService {
       logger.socket(
         `Socket disconnection verified: ${this.logoutMetrics.socketDisconnected}`
       );
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('SOCKET', 'Socket disconnection error:', error);
       // Continue with logout process even if socket fails
     }
@@ -129,12 +158,12 @@ export class LogoutService {
   /**
    * Handle server-side logout with smart retry
    */
-  async handleServerLogout() {
+  private async handleServerLogout(): Promise<void> {
     logger.auth('Calling logout API with retry logic...');
 
     try {
       const response = await retryService.executeWithRetry(
-        async () => {
+        async (): Promise<AxiosResponse<unknown>> => {
           logger.network('Attempting logout API call...');
           return await authApi.logout();
         },
@@ -142,7 +171,7 @@ export class LogoutService {
           maxRetries: 2,
           baseDelay: 1000,
           retryOn: [408, 429, 500, 502, 503, 504],
-          onRetry: (error, attempt) => {
+          onRetry: (error: Error, attempt: number): void => {
             logger.warn(
               'NETWORK',
               `Logout API retry ${attempt}: ${error.message}`
@@ -153,12 +182,16 @@ export class LogoutService {
 
       logger.network('Logout API successful:', response.data);
       this.logoutMetrics.serverLogoutSuccess = true;
-    } catch (apiError) {
+    } catch (apiError: unknown) {
+      const error = apiError as {
+        response?: { status?: number; statusText?: string; data?: unknown };
+        message?: string;
+      };
       logger.warn('NETWORK', 'Logout API failed after retries:', {
-        status: apiError.response?.status,
-        statusText: apiError.response?.statusText,
-        data: apiError.response?.data,
-        message: apiError.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
       });
 
       // Don't block logout on API failure - user should always be able to logout locally
@@ -169,7 +202,7 @@ export class LogoutService {
   /**
    * Handle local cleanup with verification
    */
-  async handleLocalCleanup() {
+  private async handleLocalCleanup(): Promise<void> {
     logger.auth('Starting local cleanup...');
 
     try {
@@ -184,7 +217,7 @@ export class LogoutService {
         'user',
       ]);
       const hasRemainingData = remainingTokens.some(
-        ([key, value]) => value !== null
+        ([, value]) => value !== null
       );
 
       if (hasRemainingData) {
@@ -197,7 +230,7 @@ export class LogoutService {
 
       this.logoutMetrics.cleanupSuccess = true;
       logger.auth('Local cleanup completed successfully');
-    } catch (cleanupError) {
+    } catch (cleanupError: unknown) {
       logger.error('AUTH', 'Error during local cleanup:', cleanupError);
 
       // Attempt force cleanup
@@ -205,7 +238,7 @@ export class LogoutService {
         await this.forceIndividualCleanup();
         this.logoutMetrics.cleanupSuccess = true;
         logger.auth('Force cleanup successful');
-      } catch (forceError) {
+      } catch (forceError: unknown) {
         logger.error('AUTH', 'Force cleanup also failed:', forceError);
         this.logoutMetrics.cleanupSuccess = false;
       }
@@ -215,7 +248,7 @@ export class LogoutService {
   /**
    * Force individual cleanup as fallback
    */
-  async forceIndividualCleanup() {
+  private async forceIndividualCleanup(): Promise<void> {
     await AsyncStorage.removeItem('accessToken');
     await AsyncStorage.removeItem('refreshToken');
     await AsyncStorage.removeItem('user');
@@ -224,7 +257,10 @@ export class LogoutService {
   /**
    * Emergency cleanup when main process fails
    */
-  async performEmergencyCleanup(originalError) {
+  private async performEmergencyCleanup(
+    originalError: unknown
+  ): Promise<LogoutResult> {
+    const error = originalError as { message?: string };
     logger.error(
       'AUTH',
       'Performing emergency cleanup due to error:',
@@ -235,7 +271,7 @@ export class LogoutService {
       // Force socket disconnection
       try {
         socketService.disconnect();
-      } catch (socketError) {
+      } catch (socketError: unknown) {
         logger.error(
           'SOCKET',
           'Emergency socket disconnection failed:',
@@ -246,7 +282,7 @@ export class LogoutService {
       // Force local cleanup
       await this.forceIndividualCleanup();
 
-      const duration = Date.now() - this.logoutMetrics.startTime;
+      const duration = Date.now() - (this.logoutMetrics.startTime || 0);
 
       logger.auth('Emergency logout completed');
 
@@ -256,16 +292,17 @@ export class LogoutService {
         socketDisconnected: false,
         cleanupSuccess: true,
         duration,
-        error: originalError.message,
+        error: error.message,
         emergency: true,
       };
-    } catch (emergencyError) {
+    } catch (emergencyError: unknown) {
+      const emergencyErr = emergencyError as { message?: string };
       logger.error('AUTH', 'Emergency cleanup failed:', emergencyError);
 
       return {
         success: false,
-        error: `Emergency cleanup failed: ${emergencyError.message}`,
-        originalError: originalError.message,
+        error: `Emergency cleanup failed: ${emergencyErr.message}`,
+        originalError: error.message,
       };
     }
   }
@@ -273,21 +310,21 @@ export class LogoutService {
   /**
    * Simple delay utility
    */
-  delay(ms) {
+  private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
    * Get current logout status
    */
-  isLogoutInProgress() {
+  public isLogoutInProgress(): boolean {
     return this.isLoggingOut;
   }
 
   /**
    * Get last logout metrics (for debugging)
    */
-  getLastLogoutMetrics() {
+  public getLastLogoutMetrics(): LogoutMetrics {
     return { ...this.logoutMetrics };
   }
 }
