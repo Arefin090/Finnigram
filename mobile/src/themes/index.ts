@@ -1,15 +1,83 @@
 // Finnigram Theme System
 // Foundation for relationship-aware theming
 
-const baseColors = {
+// Type definitions
+interface ShadowStyle {
+  shadowColor: string;
+  shadowOffset: { width: number; height: number };
+  shadowOpacity: number;
+  shadowRadius: number;
+  elevation: number;
+}
+
+interface BaseColors {
+  // Primary Brand Colors
+  primary: string;
+  primaryDark: string;
+
+  // Secondary Colors
+  secondary: string;
+  secondaryDark: string;
+
+  // Neutral Colors
+  black: string;
+  white: string;
+  gray50: string;
+  gray100: string;
+  gray200: string;
+  gray300: string;
+  gray400: string;
+  gray500: string;
+  gray600: string;
+  gray700: string;
+  gray800: string;
+  gray900: string;
+
+  // iOS System Colors
+  systemBlue: string;
+  systemGreen: string;
+  systemRed: string;
+  systemOrange: string;
+  systemYellow: string;
+  systemPurple: string;
+  systemPink: string;
+  systemIndigo: string;
+
+  // Background Colors
+  background: string;
+  surface: string;
+
+  // Text Colors
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+
+  // Border Colors
+  border: string;
+  separator: string;
+}
+
+interface Theme {
+  name: string;
+  colors: { [key: string]: string | string[] };
+  gradients: { [key: string]: string[] };
+  shadows: { [key: string]: ShadowStyle };
+  animations?: { [key: string]: boolean | Record<string, unknown> };
+}
+
+interface RelationshipThemes {
+  [key: string]: Theme;
+}
+
+const baseColors: BaseColors = {
   // Primary Brand Colors
   primary: '#4facfe',
   primaryDark: '#00f2fe',
-  
+
   // Secondary Colors
   secondary: '#667eea',
   secondaryDark: '#764ba2',
-  
+
   // Neutral Colors
   black: '#000000',
   white: '#FFFFFF',
@@ -23,7 +91,7 @@ const baseColors = {
   gray700: '#374151',
   gray800: '#1F2937',
   gray900: '#111827',
-  
+
   // iOS System Colors
   systemBlue: '#007AFF',
   systemGreen: '#34C759',
@@ -33,23 +101,23 @@ const baseColors = {
   systemPurple: '#AF52DE',
   systemPink: '#FF2D92',
   systemIndigo: '#5856D6',
-  
+
   // Background Colors
   background: '#F2F2F7',
   surface: '#FFFFFF',
-  
+
   // Text Colors
   textPrimary: '#000000',
   textSecondary: '#8E8E93',
   textTertiary: '#C7C7CC',
-  
+
   // Border Colors
   border: '#E5E5EA',
   separator: '#C6C6C8',
 };
 
 // Default theme for normal conversations
-export const defaultTheme = {
+export const defaultTheme: Theme = {
   name: 'default',
   colors: {
     ...baseColors,
@@ -86,7 +154,7 @@ export const defaultTheme = {
 };
 
 // Special person theme (romantic/partner)
-export const specialPersonTheme = {
+export const specialPersonTheme: Theme = {
   name: 'special_person',
   colors: {
     ...baseColors,
@@ -115,7 +183,7 @@ export const specialPersonTheme = {
 };
 
 // Family theme (warm, comforting)
-export const familyTheme = {
+export const familyTheme: Theme = {
   name: 'family',
   colors: {
     ...baseColors,
@@ -134,7 +202,7 @@ export const familyTheme = {
 };
 
 // Best friend theme (fun, energetic)
-export const bestFriendTheme = {
+export const bestFriendTheme: Theme = {
   name: 'best_friend',
   colors: {
     ...baseColors,
@@ -154,7 +222,7 @@ export const bestFriendTheme = {
 };
 
 // Theme mapping for relationship types
-export const relationshipThemes = {
+export const relationshipThemes: RelationshipThemes = {
   normal: defaultTheme,
   special: specialPersonTheme,
   family: familyTheme,
@@ -162,17 +230,20 @@ export const relationshipThemes = {
 };
 
 // Helper function to get theme by relationship type
-export const getThemeForRelationship = (relationshipType = 'normal') => {
+export const getThemeForRelationship = (relationshipType = 'normal'): Theme => {
   return relationshipThemes[relationshipType] || defaultTheme;
 };
 
 // Helper function to get gradient colors
-export const getGradient = (theme, gradientName = 'primary') => {
+export const getGradient = (
+  theme: Theme,
+  gradientName = 'primary'
+): string[] => {
   return theme.gradients[gradientName] || theme.gradients.primary;
 };
 
 // Helper function to get shadow style
-export const getShadow = (theme, shadowSize = 'medium') => {
+export const getShadow = (theme: Theme, shadowSize = 'medium'): ShadowStyle => {
   return theme.shadows[shadowSize] || theme.shadows.medium;
 };
 

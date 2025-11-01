@@ -54,6 +54,24 @@ interface LoginResponse {
   };
 }
 
+// Response wrapper interfaces that match actual backend responses
+interface AuthUserResponse {
+  user: User;
+}
+
+interface ConversationCreateResponse {
+  message: string;
+  conversation: Conversation;
+}
+
+interface UserSearchResponse {
+  users: User[];
+}
+
+interface MessagesResponse {
+  messages: Message[];
+}
+
 interface RegisterRequest {
   email: string;
   username: string;
@@ -169,7 +187,8 @@ export const authApi = {
   logout: (): Promise<AxiosResponse<void>> =>
     userApi.post('/auth/logout', {}, { timeout: 5000 }), // 5 second timeout
 
-  getCurrentUser: (): Promise<AxiosResponse<User>> => userApi.get('/auth/me'),
+  getCurrentUser: (): Promise<AxiosResponse<AuthUserResponse>> =>
+    userApi.get('/auth/me'),
 
   refreshToken: (
     refreshToken: string
@@ -189,7 +208,7 @@ export const userApiExports = {
   searchUsers: (
     query: string,
     limit: number = 10
-  ): Promise<AxiosResponse<{ users: User[] }>> =>
+  ): Promise<AxiosResponse<UserSearchResponse>> =>
     userApi.get('/users', { params: { q: query, limit } }),
 };
 
@@ -208,7 +227,7 @@ export const messageApiExports = {
 
   createConversation: (
     data: CreateConversationRequest
-  ): Promise<AxiosResponse<Conversation>> =>
+  ): Promise<AxiosResponse<ConversationCreateResponse>> =>
     messageApi.post('/conversations', data),
 
   getConversation: (id: number): Promise<AxiosResponse<Conversation>> =>
@@ -243,7 +262,7 @@ export const messageApiExports = {
     conversationId: number,
     limit: number = 50,
     offset: number = 0
-  ): Promise<AxiosResponse<{ messages: Message[] }>> =>
+  ): Promise<AxiosResponse<MessagesResponse>> =>
     messageApi.get(`/messages/conversations/${conversationId}`, {
       params: { limit, offset, order: 'asc' }, // Request messages in chronological order
     }),
@@ -265,6 +284,60 @@ export const messageApiExports = {
     limit: number = 20
   ): Promise<AxiosResponse<{ messages: Message[] }>> =>
     messageApi.get('/messages/search', { params: { q: query, limit } }),
+};
+
+// API Response validation helpers
+const validateAuthUserResponse = (data: unknown): data is AuthUserResponse => {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'user' in data &&
+    typeof (data as AuthUserResponse).user === 'object' &&
+    (data as AuthUserResponse).user !== null &&
+    'id' in (data as AuthUserResponse).user
+  );
+};
+
+const validateConversationCreateResponse = (
+  data: unknown
+): data is ConversationCreateResponse => {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'conversation' in data &&
+    typeof (data as ConversationCreateResponse).conversation === 'object' &&
+    (data as ConversationCreateResponse).conversation !== null &&
+    'id' in (data as ConversationCreateResponse).conversation
+  );
+};
+
+// Validated API wrapper for critical endpoints
+export const validatedAuthApi = {
+  ...authApi,
+  getCurrentUser: async (): Promise<AxiosResponse<AuthUserResponse>> => {
+    const response = await authApi.getCurrentUser();
+
+    if (!validateAuthUserResponse(response.data)) {
+      throw new Error('Invalid response structure from getCurrentUser API');
+    }
+
+    return response;
+  },
+};
+
+export const validatedMessageApi = {
+  ...messageApiExports,
+  createConversation: async (
+    data: CreateConversationRequest
+  ): Promise<AxiosResponse<ConversationCreateResponse>> => {
+    const response = await messageApiExports.createConversation(data);
+
+    if (!validateConversationCreateResponse(response.data)) {
+      throw new Error('Invalid response structure from createConversation API');
+    }
+
+    return response;
+  },
 };
 
 export { userApi, messageApi };

@@ -1,7 +1,30 @@
+/* eslint-disable no-console */
 /**
  * Centralized Logging Service for Finnigram Mobile App
  * Provides configurable logging with environment-based controls
  */
+
+// Type definitions
+interface LoggerConfig {
+  level?: string | number;
+  categories?: string[];
+  timestamp?: boolean;
+}
+
+interface LoggerConfiguration {
+  level: number;
+  enabledCategories: string[];
+  timestamp: boolean;
+}
+
+declare const __DEV__: boolean;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __FINNIGRAM_LOG_LEVEL__: number | undefined;
+  // eslint-disable-next-line no-var
+  var __FINNIGRAM_LOGGER__: Logger | undefined;
+}
 
 const LOG_LEVELS = {
   NONE: 0,
@@ -10,9 +33,14 @@ const LOG_LEVELS = {
   INFO: 3,
   DEBUG: 4,
   VERBOSE: 5,
-};
+} as const;
 
 class Logger {
+  private logLevel: number;
+  private enabledCategories: Set<string>;
+  private isTimestampEnabled: boolean;
+  private isFileLoggingEnabled: boolean;
+
   constructor() {
     // Set default log level based on environment
     this.logLevel = __DEV__ ? LOG_LEVELS.DEBUG : LOG_LEVELS.ERROR;
@@ -30,9 +58,11 @@ class Logger {
   /**
    * Set the global log level
    */
-  setLogLevel(level) {
+  setLogLevel(level: string | number): void {
     if (typeof level === 'string') {
-      this.logLevel = LOG_LEVELS[level.toUpperCase()] || LOG_LEVELS.INFO;
+      this.logLevel =
+        LOG_LEVELS[level.toUpperCase() as keyof typeof LOG_LEVELS] ||
+        LOG_LEVELS.INFO;
     } else {
       this.logLevel = level;
     }
@@ -41,25 +71,25 @@ class Logger {
   /**
    * Enable/disable specific logging categories
    */
-  enableCategory(category) {
+  enableCategory(category: string): void {
     this.enabledCategories.add(category);
   }
 
-  disableCategory(category) {
+  disableCategory(category: string): void {
     this.enabledCategories.delete(category);
   }
 
   /**
    * Enable/disable timestamps
    */
-  setTimestamp(enabled) {
+  setTimestamp(enabled: boolean): void {
     this.isTimestampEnabled = enabled;
   }
 
   /**
    * Check if a log level should be output
    */
-  shouldLog(level, category = null) {
+  shouldLog(level: number, category: string | null = null): boolean {
     if (this.logLevel === LOG_LEVELS.NONE) return false;
 
     // Check level
@@ -80,15 +110,20 @@ class Logger {
   /**
    * Format log message with timestamp and metadata
    */
-  formatMessage(level, category, message, ...args) {
-    const parts = [];
+  formatMessage(
+    level: number,
+    category: string | null,
+    message: unknown,
+    ...args: unknown[]
+  ): [string, unknown, ...unknown[]] {
+    const parts: string[] = [];
 
     if (this.isTimestampEnabled) {
       parts.push(new Date().toISOString());
     }
 
     // Level indicator
-    const levelNames = {
+    const levelNames: { [key: number]: string } = {
       [LOG_LEVELS.ERROR]: '❌ ERROR',
       [LOG_LEVELS.WARN]: '⚠️  WARN',
       [LOG_LEVELS.INFO]: '📝 INFO',
@@ -109,7 +144,12 @@ class Logger {
   /**
    * Core logging method
    */
-  log(level, category, message, ...args) {
+  log(
+    level: number,
+    category: string | null,
+    message: unknown,
+    ...args: unknown[]
+  ): void {
     if (!this.shouldLog(level, category)) return;
 
     const formattedArgs = this.formatMessage(level, category, message, ...args);
@@ -136,57 +176,57 @@ class Logger {
   /**
    * Convenience methods
    */
-  error(category, message, ...args) {
+  error(category: string, message: unknown, ...args: unknown[]): void {
     this.log(LOG_LEVELS.ERROR, category, message, ...args);
   }
 
-  warn(category, message, ...args) {
+  warn(category: string, message: unknown, ...args: unknown[]): void {
     this.log(LOG_LEVELS.WARN, category, message, ...args);
   }
 
-  info(category, message, ...args) {
+  info(category: string, message: unknown, ...args: unknown[]): void {
     this.log(LOG_LEVELS.INFO, category, message, ...args);
   }
 
-  debug(category, message, ...args) {
+  debug(category: string, message: unknown, ...args: unknown[]): void {
     this.log(LOG_LEVELS.DEBUG, category, message, ...args);
   }
 
-  verbose(category, message, ...args) {
+  verbose(category: string, message: unknown, ...args: unknown[]): void {
     this.log(LOG_LEVELS.VERBOSE, category, message, ...args);
   }
 
   /**
    * Specialized logging methods for common use cases
    */
-  network(message, ...args) {
+  network(message: unknown, ...args: unknown[]): void {
     this.debug('NETWORK', message, ...args);
   }
 
-  auth(message, ...args) {
+  auth(message: unknown, ...args: unknown[]): void {
     this.info('AUTH', message, ...args);
   }
 
-  socket(message, ...args) {
+  socket(message: unknown, ...args: unknown[]): void {
     this.debug('SOCKET', message, ...args);
   }
 
-  navigation(message, ...args) {
+  navigation(message: unknown, ...args: unknown[]): void {
     this.debug('NAVIGATION', message, ...args);
   }
 
-  state(message, ...args) {
+  state(message: unknown, ...args: unknown[]): void {
     this.verbose('STATE', message, ...args);
   }
 
-  performance(message, ...args) {
+  performance(message: unknown, ...args: unknown[]): void {
     this.info('PERFORMANCE', message, ...args);
   }
 
   /**
    * Group logging for complex operations
    */
-  group(label, collapsed = false) {
+  group(label: string, collapsed: boolean = false): void {
     if (this.shouldLog(LOG_LEVELS.DEBUG)) {
       if (collapsed) {
         console.groupCollapsed(label);
@@ -196,7 +236,7 @@ class Logger {
     }
   }
 
-  groupEnd() {
+  groupEnd(): void {
     if (this.shouldLog(LOG_LEVELS.DEBUG)) {
       console.groupEnd();
     }
@@ -205,13 +245,13 @@ class Logger {
   /**
    * Time measurement utilities
    */
-  time(label) {
+  time(label: string): void {
     if (this.shouldLog(LOG_LEVELS.DEBUG)) {
       console.time(label);
     }
   }
 
-  timeEnd(label) {
+  timeEnd(label: string): void {
     if (this.shouldLog(LOG_LEVELS.DEBUG)) {
       console.timeEnd(label);
     }
@@ -220,7 +260,7 @@ class Logger {
   /**
    * Configuration for development vs production
    */
-  configure(options = {}) {
+  configure(options: LoggerConfig = {}): void {
     if (options.level !== undefined) {
       this.setLogLevel(options.level);
     }
@@ -238,7 +278,7 @@ class Logger {
   /**
    * Get current configuration
    */
-  getConfig() {
+  getConfig(): LoggerConfiguration {
     return {
       level: this.logLevel,
       enabledCategories: Array.from(this.enabledCategories),
@@ -255,7 +295,7 @@ export { LOG_LEVELS };
 export default logger;
 
 // Global configuration helper
-export const configureLogging = options => {
+export const configureLogging = (options: LoggerConfig): void => {
   logger.configure(options);
 };
 

@@ -25,10 +25,10 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log error for debugging
     logger.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+
     // Call optional error handler
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -39,7 +39,7 @@ class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: undefined });
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       // Custom fallback UI
       if (this.props.fallback) {
@@ -56,7 +56,10 @@ class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.message}>
             Don't worry, this happens sometimes. Try refreshing to continue.
           </Text>
-          <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry}>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={this.handleRetry}
+          >
             <Ionicons name="refresh" size={20} color="#fff" />
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>

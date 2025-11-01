@@ -21,11 +21,11 @@ const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 // Auth Stack - for login/register
-const AuthStack = () => (
-  <Stack.Navigator 
-    screenOptions={{ 
+const AuthStack: React.FC = () => (
+  <Stack.Navigator
+    screenOptions={{
       headerShown: false,
-      cardStyle: { backgroundColor: '#f8f9fa' }
+      cardStyle: { backgroundColor: '#f8f9fa' },
     }}
   >
     <Stack.Screen name="Login" component={LoginScreen} />
@@ -34,38 +34,31 @@ const AuthStack = () => (
 );
 
 // Chat Stack - for conversations and chat
-const ChatStack = () => (
-  <Stack.Navigator 
+const ChatStack: React.FC = () => (
+  <Stack.Navigator
     screenOptions={{
       headerShown: false,
     }}
   >
-    <Stack.Screen 
-      name="Conversations" 
-      component={ConversationsScreen}
-    />
-    <Stack.Screen 
-      name="Chat" 
-      component={ChatScreen}
-    />
-    <Stack.Screen 
-      name="UserSearch" 
-      component={UserSearchScreen}
-    />
+    <Stack.Screen name="Conversations" component={ConversationsScreen} />
+    <Stack.Screen name="Chat" component={ChatScreen as any} />
+    <Stack.Screen name="UserSearch" component={UserSearchScreen} />
   </Stack.Navigator>
 );
 
 // Main Tab Navigator
-const MainTabs = () => (
+const MainTabs: React.FC = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
       tabBarIcon: ({ focused, color, size }) => {
-        let iconName;
+        let iconName: keyof typeof Ionicons.glyphMap;
 
         if (route.name === 'Chats') {
           iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
         } else if (route.name === 'Profile') {
           iconName = focused ? 'person' : 'person-outline';
+        } else {
+          iconName = 'help-outline';
         }
 
         return <Ionicons name={iconName} size={size} color={color} />;
@@ -81,7 +74,7 @@ const MainTabs = () => (
 );
 
 // App Navigator - decides between auth and main app
-const AppNavigator = () => {
+const AppNavigator: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
@@ -104,7 +97,7 @@ const AppNavigator = () => {
 };
 
 // Main App Component
-export default function App() {
+const App: React.FC = () => {
   useEffect(() => {
     // Initialize logging system on app startup
     initializeLogging();
@@ -115,4 +108,6 @@ export default function App() {
       <AppNavigator />
     </AuthProvider>
   );
-}
+};
+
+export default App;

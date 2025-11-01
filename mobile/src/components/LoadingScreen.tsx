@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-const LoadingScreen = () => {
+const LoadingScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />

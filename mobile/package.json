@@ -1,17 +1,17 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "echo 'Mobile linting skipped - using Expo defaults'",
-    "lint:fix": "echo 'Mobile lint fix skipped'",
-    "format": "echo 'Mobile formatting skipped'",
-    "format:check": "echo 'Mobile format check skipped'",
-    "typecheck": "echo 'Mobile typecheck skipped'"
+    "lint": "eslint src/ --ext .ts,.tsx",
+    "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.4",
@@ -34,6 +34,16 @@
   },
   "private": true,
   "devDependencies": {
-    "@types/react": "~19.1.10"
+    "@types/react": "~19.1.10",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-native": "^5.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
   }
 }

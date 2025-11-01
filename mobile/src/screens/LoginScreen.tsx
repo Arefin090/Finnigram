@@ -13,11 +13,20 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../context/AuthContext';
 
-const LoginScreen = ({ navigation }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  
+// Types for navigation prop
+interface Navigation {
+  navigate: (screen: string) => void;
+}
+
+interface LoginScreenProps {
+  navigation: Navigation;
+}
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
   const { login, error, clearError } = useAuth();
 
   useEffect(() => {
@@ -27,21 +36,21 @@ const LoginScreen = ({ navigation }) => {
     }
   }, [error]);
 
-  const handleLogin = async () => {
+  const handleLogin = async (): Promise<void> => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
     setIsLoading(true);
-    
+
     try {
       const result = await login(email.trim().toLowerCase(), password);
-      
+
       if (!result.success) {
         Alert.alert('Login Failed', result.error);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
@@ -49,7 +58,7 @@ const LoginScreen = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -90,7 +99,7 @@ const LoginScreen = ({ navigation }) => {
               />
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.button, isLoading && styles.buttonDisabled]}
               onPress={handleLogin}
               disabled={isLoading}

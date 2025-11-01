@@ -1,5 +1,27 @@
 // Environment configuration for Finnigram
-const config = {
+
+// Type definitions
+interface LoggingConfig {
+  level: string;
+  categories: string[];
+  timestamp: boolean;
+}
+
+interface EnvironmentConfig {
+  USER_SERVICE_URL: string;
+  MESSAGE_SERVICE_URL: string;
+  REALTIME_SERVICE_URL: string;
+  LOGGING: LoggingConfig;
+}
+
+interface Config {
+  development: EnvironmentConfig;
+  production: EnvironmentConfig;
+}
+
+declare const __DEV__: boolean;
+
+const config: Config = {
   development: {
     USER_SERVICE_URL: 'http://localhost:3001/api',
     MESSAGE_SERVICE_URL: 'http://localhost:3002/api',
@@ -29,7 +51,7 @@ const config = {
 // const environment = __DEV__ ? 'development' : 'production';
 
 // For testing production services locally, temporarily force production:
-const environment = 'production';
+const environment: keyof Config = 'production';
 
 export const {
   USER_SERVICE_URL,

@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import ErrorBoundary from '../components/ErrorBoundary';
+import logger from '../services/loggerConfig';
+import { type Conversation } from '../services/api';
 import { styles } from './ConversationsScreen.styles';
 
 // Enable LayoutAnimation for Android
@@ -36,24 +38,8 @@ interface ConversationsScreenProps {
   navigation: Navigation;
 }
 
-// Types for conversation data
-interface Participant {
-  id: number;
-  display_name?: string;
-  displayName?: string;
-  username?: string;
-  name?: string;
-}
-
-interface Conversation {
-  id: number;
-  name?: string;
-  type: 'group' | 'direct';
-  participants?: Participant[];
-  last_message?: string;
-  last_message_at?: string;
-  unread_count: number;
-}
+// Types for conversation data - using API types
+// Participant and Conversation interfaces imported from '../services/api'
 
 // Types for render item
 interface RenderItemProps {
@@ -166,16 +152,16 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
         // Find the other participant (not the current user)
         const otherParticipant = conversation.participants.find(
           p =>
-            p.id !== user.id && p.id !== (user as { user_id?: number }).user_id
+            user &&
+            p.id !== user.id &&
+            p.id !== (user as { user_id?: number }).user_id
         );
 
         if (otherParticipant) {
           // Try multiple field names for display name
           const displayName =
-            otherParticipant.display_name ||
             otherParticipant.displayName ||
             otherParticipant.username ||
-            otherParticipant.name ||
             'Unknown User';
           return displayName;
         }
@@ -189,7 +175,7 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
       // Fallback to conversation name or generic message
       return conversation.name || 'Direct Message';
     },
-    [user.id]
+    [user?.id]
   );
 
   const isUserOnline = (_conversation: Conversation): boolean => {
@@ -267,10 +253,12 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
               <Text style={styles.lastMessage} numberOfLines={2}>
                 {item.last_message || 'No messages yet'}
               </Text>
-              {item.unread_count > 0 && (
+              {(item.unread_count || 0) > 0 && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadCount}>
-                    {item.unread_count > 99 ? '99+' : item.unread_count}
+                    {(item.unread_count || 0) > 99
+                      ? '99+'
+                      : item.unread_count || 0}
                   </Text>
                 </View>
               )}
@@ -502,10 +490,12 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
 };
 
 // Wrap ConversationsScreen with ErrorBoundary for crash protection
-const ConversationsScreenWithErrorBoundary: React.FC<ConversationsScreenProps> = (props) => (
+const ConversationsScreenWithErrorBoundary: React.FC<
+  ConversationsScreenProps
+> = props => (
   <ErrorBoundary
     onError={(error, errorInfo) => {
-      console.error('ConversationsScreen crashed:', error, errorInfo);
+      logger.error('SCREEN', 'ConversationsScreen crashed:', error, errorInfo);
     }}
   >
     <ConversationsScreen {...props} />
