@@ -330,8 +330,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       if (hasCachedData) {
         // Check for conflicts (messages that changed or were deleted)
         const hasConflicts =
-          cachedMessages.length !== freshMessages.length ||
-          !cachedMessages.every(cachedMsg => {
+          cachedMessages?.length !== freshMessages.length ||
+          !cachedMessages?.every(cachedMsg => {
             const freshMsg = freshMessages.find(m => m.id === cachedMsg.id);
             return (
               freshMsg && JSON.stringify(cachedMsg) === JSON.stringify(freshMsg)
@@ -455,7 +455,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   // Set up socket event listeners
   const setupSocketListeners = (): void => {
     // Listen for new messages
-    const unsubscribeNewMessage = socketService.on(
+    const unsubscribeNewMessage = socketService.onTyped<SocketMessage>(
       'new_message',
       (message: SocketMessage) => {
         if (message.conversation_id === conversationId) {
@@ -476,7 +476,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
             // Check if this message should replace an optimistic message
             // (when sender_id matches current user, it's likely our optimistic message being confirmed)
-            const isOurMessage = message.sender_id === user.id;
+            const isOurMessage = user && message.sender_id === user.id;
             let newMessages = [...prevMessages];
 
             if (isOurMessage) {
@@ -542,10 +542,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     );
 
     // Listen for typing indicators
-    const unsubscribeTyping = socketService.on(
+    const unsubscribeTyping = socketService.onTyped<SocketTypingData>(
       'user_typing',
       (data: SocketTypingData) => {
-        if (data.conversationId === conversationId && data.userId !== user.id) {
+        if (
+          data.conversationId === conversationId &&
+          user &&
+          data.userId !== user.id
+        ) {
           setTypingUsers(prevTyping => {
             if (data.isTyping) {
               return prevTyping.includes(data.userId)
@@ -560,69 +564,72 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     );
 
     // Listen for message delivery status
-    const unsubscribeMessageDelivered = socketService.on(
-      'message_delivered',
-      (data: SocketMessageStatusData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket('Message delivered:', data.messageId);
+    const unsubscribeMessageDelivered =
+      socketService.onTyped<SocketMessageStatusData>(
+        'message_delivered',
+        (data: SocketMessageStatusData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket('Message delivered:', data.messageId);
 
-          // Update message status in local state
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              message.id === data.messageId
-                ? {
-                    ...message,
-                    status: 'delivered',
-                    delivered_at: data.deliveredAt,
-                  }
-                : message
-            )
-          );
+            // Update message status in local state
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                message.id === data.messageId
+                  ? {
+                      ...message,
+                      status: 'delivered',
+                      delivered_at: data.deliveredAt,
+                    }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Listen for message read status
-    const unsubscribeMessageRead = socketService.on(
-      'message_read',
-      (data: SocketMessageStatusData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket('Message read:', data.messageId);
+    const unsubscribeMessageRead =
+      socketService.onTyped<SocketMessageStatusData>(
+        'message_read',
+        (data: SocketMessageStatusData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket('Message read:', data.messageId);
 
-          // Update message status in local state
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              message.id === data.messageId
-                ? { ...message, status: 'read', read_at: data.readAt }
-                : message
-            )
-          );
+            // Update message status in local state
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                message.id === data.messageId
+                  ? { ...message, status: 'read', read_at: data.readAt }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Listen for conversation read status (when all messages are marked as read)
-    const unsubscribeConversationRead = socketService.on(
-      'conversation_read',
-      (data: SocketConversationReadData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket(
-            'Conversation read:',
-            data.messageIds.length,
-            'messages'
-          );
+    const unsubscribeConversationRead =
+      socketService.onTyped<SocketConversationReadData>(
+        'conversation_read',
+        (data: SocketConversationReadData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket(
+              'Conversation read:',
+              data.messageIds.length,
+              'messages'
+            );
 
-          // Update all affected messages to read status
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              data.messageIds.includes(message.id)
-                ? { ...message, status: 'read', read_at: data.readAt }
-                : message
-            )
-          );
+            // Update all affected messages to read status
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                data.messageIds.includes(message.id)
+                  ? { ...message, status: 'read', read_at: data.readAt }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Store unsubscribe functions locally for cleanup
     unsubscribersRef.current = [
@@ -651,7 +658,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   // Send a message
   const handleSendMessage = async (): Promise<void> => {
     const text = messageText.trim();
-    if (!text) return;
+    if (!text || !user) return;
 
     // Create optimistic message with correlation ID
     const correlationId = generateCorrelationId();
@@ -760,7 +767,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
   // Get message status icon
   const getMessageStatusIcon = (message: ChatMessage): React.ReactNode => {
-    if (message.sender_id !== user.id) return null; // Only show status for own messages
+    if (!user || message.sender_id !== user.id) return null; // Only show status for own messages
 
     switch (message.status) {
       case 'sending':
@@ -845,7 +852,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   }: {
     item: ChatMessage;
   }): React.ReactElement => {
-    const isMyMessage = item.sender_id === user.id;
+    const isMyMessage = user && item.sender_id === user.id;
 
     return (
       <View

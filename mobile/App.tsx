@@ -41,7 +41,7 @@ const ChatStack: React.FC = () => (
     }}
   >
     <Stack.Screen name="Conversations" component={ConversationsScreen} />
-    <Stack.Screen name="Chat" component={ChatScreen} />
+    <Stack.Screen name="Chat" component={ChatScreen as any} />
     <Stack.Screen name="UserSearch" component={UserSearchScreen} />
   </Stack.Navigator>
 );

@@ -54,7 +54,7 @@ class RetryService {
     options: RetryOptions = {}
   ): Promise<T> {
     const config = { ...this.defaultOptions, ...options };
-    let lastError: Error;
+    let lastError: Error = new Error('Unknown error');
 
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
       try {

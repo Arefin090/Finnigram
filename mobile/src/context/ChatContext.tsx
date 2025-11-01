@@ -229,7 +229,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     }
 
     // Listen for new conversations (when someone starts a chat with you)
-    const unsubscribeNewConversation = socketService.on(
+    const unsubscribeNewConversation = socketService.onTyped<Conversation>(
       'conversation_created',
       (conversation: Conversation) => {
         logger.socket('New conversation received via socket:', conversation.id);
@@ -240,7 +240,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     );
 
     // Listen for new messages globally to update conversation previews
-    const unsubscribeGlobalMessages = socketService.on(
+    const unsubscribeGlobalMessages = socketService.onTyped<SocketMessage>(
       'new_message',
       (message: SocketMessage) => {
         logger.socket(
@@ -350,8 +350,8 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       const response = await messageApiExports.createConversation({
         type,
         participantIds: participants,
-        name,
-        description,
+        name: name || undefined,
+        description: description || undefined,
       });
 
       const conversation = response.data.conversation;

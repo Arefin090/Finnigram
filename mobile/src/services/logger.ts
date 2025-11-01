@@ -123,7 +123,7 @@ class Logger {
     }
 
     // Level indicator
-    const levelNames = {
+    const levelNames: { [key: number]: string } = {
       [LOG_LEVELS.ERROR]: '❌ ERROR',
       [LOG_LEVELS.WARN]: '⚠️  WARN',
       [LOG_LEVELS.INFO]: '📝 INFO',

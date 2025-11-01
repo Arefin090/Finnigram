@@ -8,6 +8,9 @@ interface SocketEventCallback {
   (...args: unknown[]): void;
 }
 
+// Type-safe wrapper for socket event callbacks
+type TypedSocketCallback<T> = (data: T) => void;
+
 interface QueuedMessage {
   event: string;
   data?: unknown;
@@ -232,6 +235,19 @@ class SocketService {
         listeners.splice(index, 1);
       }
     };
+  }
+
+  // Type-safe event subscription
+  public onTyped<T>(
+    eventName: string,
+    callback: TypedSocketCallback<T>
+  ): () => void {
+    const wrappedCallback: SocketEventCallback = (...args: unknown[]) => {
+      // Assume the first argument is the data we want
+      callback(args[0] as T);
+    };
+
+    return this.on(eventName, wrappedCallback);
   }
 
   public off(eventName: string, callback: SocketEventCallback): void {

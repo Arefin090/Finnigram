@@ -152,7 +152,9 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
         // Find the other participant (not the current user)
         const otherParticipant = conversation.participants.find(
           p =>
-            p.id !== user.id && p.id !== (user as { user_id?: number }).user_id
+            user &&
+            p.id !== user.id &&
+            p.id !== (user as { user_id?: number }).user_id
         );
 
         if (otherParticipant) {
@@ -173,7 +175,7 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
       // Fallback to conversation name or generic message
       return conversation.name || 'Direct Message';
     },
-    [user.id]
+    [user?.id]
   );
 
   const isUserOnline = (_conversation: Conversation): boolean => {
@@ -251,10 +253,12 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
               <Text style={styles.lastMessage} numberOfLines={2}>
                 {item.last_message || 'No messages yet'}
               </Text>
-              {item.unread_count > 0 && (
+              {(item.unread_count || 0) > 0 && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadCount}>
-                    {item.unread_count > 99 ? '99+' : item.unread_count}
+                    {(item.unread_count || 0) > 99
+                      ? '99+'
+                      : item.unread_count || 0}
                   </Text>
                 </View>
               )}

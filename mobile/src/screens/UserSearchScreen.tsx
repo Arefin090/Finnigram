@@ -59,7 +59,9 @@ const UserSearchScreen: React.FC<UserSearchScreenProps> = ({ navigation }) => {
     try {
       const response = await userApiExports.searchUsers(searchQuery.trim());
       // Filter out current user
-      const filteredResults = response.data.users.filter(u => u.id !== user.id);
+      const filteredResults = response.data.users.filter(
+        u => user && u.id !== user.id
+      );
       setSearchResults(filteredResults);
     } catch {
       Alert.alert('Error', 'Failed to search users. Please try again.');
