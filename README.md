@@ -160,6 +160,6 @@ Plus, I wanted an excuse to build something with proper engineering practices. I
 
 ## Contributing
 
-This is a personal project, but if you want to mess around with it, go ahead! Just know that I might be opinionated about changes since this is my baby.
+This is a personal project, but if you want to mess around with it, reach out to me and we can collab!
 
 The codebase is pretty clean and well-documented. If you're learning about microservices or React Native, it might be a decent reference.
