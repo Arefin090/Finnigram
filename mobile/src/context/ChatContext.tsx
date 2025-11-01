@@ -92,7 +92,7 @@ interface ChatContextType extends ChatState {
   loadConversations: (refresh?: boolean) => Promise<void>;
   loadMoreConversations: () => Promise<void>;
   createConversation: (
-    type: string,
+    type: 'direct' | 'group',
     participants: number[],
     name?: string | null,
     description?: string | null
@@ -260,7 +260,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         if (message.sender_id !== user?.id) {
           setTimeout(async () => {
             try {
-              await messageApiExports.markMessageAsDelivered(message.id);
+              await messageApiExports.markMessageAsDelivered(
+                Number(message.id)
+              );
               logger.info(
                 'CHAT',
                 'Global auto-marked message as delivered:',
@@ -339,7 +341,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   // Create a new conversation
   const createConversation = async (
-    type: string,
+    type: 'direct' | 'group',
     participants: number[],
     name: string | null = null,
     description: string | null = null
@@ -347,12 +349,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     try {
       const response = await messageApiExports.createConversation({
         type,
-        participants,
+        participantIds: participants,
         name,
         description,
       });
 
-      const conversation = response.data.conversation;
+      const conversation = response.data;
       dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
 
       return conversation;

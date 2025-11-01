@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import ErrorBoundary from '../components/ErrorBoundary';
+import logger from '../services/loggerConfig';
+import { type Conversation } from '../services/api';
 import { styles } from './ConversationsScreen.styles';
 
 // Enable LayoutAnimation for Android
@@ -36,24 +38,8 @@ interface ConversationsScreenProps {
   navigation: Navigation;
 }
 
-// Types for conversation data
-interface Participant {
-  id: number;
-  display_name?: string;
-  displayName?: string;
-  username?: string;
-  name?: string;
-}
-
-interface Conversation {
-  id: number;
-  name?: string;
-  type: 'group' | 'direct';
-  participants?: Participant[];
-  last_message?: string;
-  last_message_at?: string;
-  unread_count: number;
-}
+// Types for conversation data - using API types
+// Participant and Conversation interfaces imported from '../services/api'
 
 // Types for render item
 interface RenderItemProps {
@@ -172,10 +158,8 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
         if (otherParticipant) {
           // Try multiple field names for display name
           const displayName =
-            otherParticipant.display_name ||
             otherParticipant.displayName ||
             otherParticipant.username ||
-            otherParticipant.name ||
             'Unknown User';
           return displayName;
         }
@@ -502,10 +486,12 @@ const ConversationsScreen: React.FC<ConversationsScreenProps> = ({
 };
 
 // Wrap ConversationsScreen with ErrorBoundary for crash protection
-const ConversationsScreenWithErrorBoundary: React.FC<ConversationsScreenProps> = (props) => (
+const ConversationsScreenWithErrorBoundary: React.FC<
+  ConversationsScreenProps
+> = props => (
   <ErrorBoundary
     onError={(error, errorInfo) => {
-      console.error('ConversationsScreen crashed:', error, errorInfo);
+      logger.error('SCREEN', 'ConversationsScreen crashed:', error, errorInfo);
     }}
   >
     <ConversationsScreen {...props} />
