@@ -28,7 +28,7 @@ class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log error for debugging
     logger.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+
     // Call optional error handler
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -56,7 +56,10 @@ class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.message}>
             Don't worry, this happens sometimes. Try refreshing to continue.
           </Text>
-          <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry}>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={this.handleRetry}
+          >
             <Ionicons name="refresh" size={20} color="#fff" />
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>
