@@ -354,7 +354,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         description,
       });
 
-      const conversation = response.data;
+      const conversation = response.data.conversation;
       dispatch({ type: 'ADD_CONVERSATION', payload: conversation });
 
       return conversation;
