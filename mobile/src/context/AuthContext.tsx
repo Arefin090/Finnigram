@@ -143,11 +143,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         dispatch({
           type: 'LOGIN_SUCCESS',
-          payload: { user: response.data.user },
+          payload: { user: response.data },
         });
 
         logger.auth(
-          `Authentication verified for user: ${response.data.user.username}`
+          `Authentication verified for user: ${response.data.username}`
         );
 
         // Connect socket
