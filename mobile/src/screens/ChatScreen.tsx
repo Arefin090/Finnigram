@@ -211,17 +211,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         // Add older messages to the beginning, avoiding duplicates
         setMessages(prev => {
           const existingIds = new Set(prev.map(msg => msg.id));
-          const existingCorrelationIds = new Set(prev.filter(msg => msg.correlationId).map(msg => msg.correlationId));
-          
+          const existingCorrelationIds = new Set(
+            prev.filter(msg => msg.correlationId).map(msg => msg.correlationId)
+          );
+
           const newOlderMessages = olderMessages.filter(msg => {
             // Check for ID duplicates
             if (existingIds.has(msg.id)) return false;
             // Check for correlation ID conflicts (unlikely but safety check)
             const msgWithCorrelation = msg as ChatMessage;
-            if (msgWithCorrelation.correlationId && existingCorrelationIds.has(msgWithCorrelation.correlationId)) return false;
+            if (
+              msgWithCorrelation.correlationId &&
+              existingCorrelationIds.has(msgWithCorrelation.correlationId)
+            )
+              return false;
             return true;
           });
-          
+
           return [...(newOlderMessages as ChatMessage[]), ...prev];
         });
         setCurrentMessageOffset(prev => prev + olderMessages.length);
@@ -271,7 +277,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
       }
-      
+
       socketService.off('connect', handleSocketConnect);
       leaveConversation();
       cleanupSocketListeners(); // Ensure all listeners are cleaned up
@@ -294,7 +300,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         setHasMoreMessages(cachedMessages.length >= 30);
         setLoading(false); // Hide skeleton immediately
         shouldScrollToBottomRef.current = true;
-        
+
         hasCachedData = true;
         logger.performance(
           'CACHE',
@@ -324,8 +330,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
       if (hasCachedData) {
         // Check for conflicts (messages that changed or were deleted)
         const hasConflicts =
-          cachedMessages.length !== freshMessages.length ||
-          !cachedMessages.every(cachedMsg => {
+          cachedMessages?.length !== freshMessages.length ||
+          !cachedMessages?.every(cachedMsg => {
             const freshMsg = freshMessages.find(m => m.id === cachedMsg.id);
             return (
               freshMsg && JSON.stringify(cachedMsg) === JSON.stringify(freshMsg)
@@ -333,7 +339,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           });
 
         if (hasConflicts) {
-          logger.info('CACHE', 'Fresh data differs from cache, updating display');
+          logger.info(
+            'CACHE',
+            'Fresh data differs from cache, updating display'
+          );
           setMessages(freshMessages as ChatMessage[]);
           setCurrentMessageOffset(freshMessages.length);
           setHasMoreMessages(freshMessages.length >= INITIAL_MESSAGE_LIMIT);
@@ -341,7 +350,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         } else {
           logger.debug('CACHE', 'Cache is up to date, no refresh needed');
         }
-        
+
         // Set high priority for active conversation
         await messageCache.setConversationPriority(conversationId, 'high');
       } else {
@@ -350,13 +359,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
         setCurrentMessageOffset(freshMessages.length);
         setHasMoreMessages(freshMessages.length >= INITIAL_MESSAGE_LIMIT);
         shouldScrollToBottomRef.current = true;
-        
+
         await messageCache.smartCacheMessages(
           conversationId,
           freshMessages,
           'high'
         );
-        
+
         logger.performance(
           'API',
           'Loaded',
@@ -446,7 +455,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   // Set up socket event listeners
   const setupSocketListeners = (): void => {
     // Listen for new messages
-    const unsubscribeNewMessage = socketService.on(
+    const unsubscribeNewMessage = socketService.onTyped<SocketMessage>(
       'new_message',
       (message: SocketMessage) => {
         if (message.conversation_id === conversationId) {
@@ -467,30 +476,47 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
             // Check if this message should replace an optimistic message
             // (when sender_id matches current user, it's likely our optimistic message being confirmed)
-            const isOurMessage = message.sender_id === user.id;
+            const isOurMessage = user && message.sender_id === user.id;
             let newMessages = [...prevMessages];
 
             if (isOurMessage) {
               // Look for optimistic message with similar content and timestamp to replace
-              const optimisticIndex = prevMessages.findIndex(m => 
-                m.isOptimistic && 
-                m.content === message.content &&
-                m.sender_id === message.sender_id &&
-                Math.abs(new Date(m.created_at).getTime() - new Date(message.created_at).getTime()) < 10000 // Within 10 seconds
+              const optimisticIndex = prevMessages.findIndex(
+                m =>
+                  m.isOptimistic &&
+                  m.content === message.content &&
+                  m.sender_id === message.sender_id &&
+                  Math.abs(
+                    new Date(m.created_at).getTime() -
+                      new Date(message.created_at).getTime()
+                  ) < 10000 // Within 10 seconds
               );
 
               if (optimisticIndex !== -1) {
                 // Replace optimistic message with real message
                 newMessages = [...prevMessages];
-                newMessages[optimisticIndex] = { ...message as ChatMessage, isOptimistic: false };
-                logger.debug('CHAT', 'Replaced optimistic message with real message:', message.id);
+                newMessages[optimisticIndex] = {
+                  ...(message as ChatMessage),
+                  isOptimistic: false,
+                };
+                logger.debug(
+                  'CHAT',
+                  'Replaced optimistic message with real message:',
+                  message.id
+                );
               } else {
                 // Add as new message (couldn't find matching optimistic message)
-                newMessages = [...prevMessages, { ...message as ChatMessage, isOptimistic: false }];
+                newMessages = [
+                  ...prevMessages,
+                  { ...(message as ChatMessage), isOptimistic: false },
+                ];
               }
             } else {
               // Message from another user, just add it
-              newMessages = [...prevMessages, { ...message as ChatMessage, isOptimistic: false }];
+              newMessages = [
+                ...prevMessages,
+                { ...(message as ChatMessage), isOptimistic: false },
+              ];
             }
 
             // Add new message to cache
@@ -516,14 +542,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     );
 
     // Listen for typing indicators
-    const unsubscribeTyping = socketService.on(
+    const unsubscribeTyping = socketService.onTyped<SocketTypingData>(
       'user_typing',
       (data: SocketTypingData) => {
-        if (data.conversationId === conversationId && data.userId !== user.id) {
+        if (
+          data.conversationId === conversationId &&
+          user &&
+          data.userId !== user.id
+        ) {
           setTypingUsers(prevTyping => {
             if (data.isTyping) {
-              return prevTyping.includes(data.userId) 
-                ? prevTyping 
+              return prevTyping.includes(data.userId)
+                ? prevTyping
                 : [...prevTyping, data.userId];
             } else {
               return prevTyping.filter(id => id !== data.userId);
@@ -534,69 +564,72 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     );
 
     // Listen for message delivery status
-    const unsubscribeMessageDelivered = socketService.on(
-      'message_delivered',
-      (data: SocketMessageStatusData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket('Message delivered:', data.messageId);
+    const unsubscribeMessageDelivered =
+      socketService.onTyped<SocketMessageStatusData>(
+        'message_delivered',
+        (data: SocketMessageStatusData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket('Message delivered:', data.messageId);
 
-          // Update message status in local state
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              message.id === data.messageId
-                ? {
-                    ...message,
-                    status: 'delivered',
-                    delivered_at: data.deliveredAt,
-                  }
-                : message
-            )
-          );
+            // Update message status in local state
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                message.id === data.messageId
+                  ? {
+                      ...message,
+                      status: 'delivered',
+                      delivered_at: data.deliveredAt,
+                    }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Listen for message read status
-    const unsubscribeMessageRead = socketService.on(
-      'message_read',
-      (data: SocketMessageStatusData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket('Message read:', data.messageId);
+    const unsubscribeMessageRead =
+      socketService.onTyped<SocketMessageStatusData>(
+        'message_read',
+        (data: SocketMessageStatusData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket('Message read:', data.messageId);
 
-          // Update message status in local state
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              message.id === data.messageId
-                ? { ...message, status: 'read', read_at: data.readAt }
-                : message
-            )
-          );
+            // Update message status in local state
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                message.id === data.messageId
+                  ? { ...message, status: 'read', read_at: data.readAt }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Listen for conversation read status (when all messages are marked as read)
-    const unsubscribeConversationRead = socketService.on(
-      'conversation_read',
-      (data: SocketConversationReadData) => {
-        if (data.conversationId === conversationId) {
-          logger.socket(
-            'Conversation read:',
-            data.messageIds.length,
-            'messages'
-          );
+    const unsubscribeConversationRead =
+      socketService.onTyped<SocketConversationReadData>(
+        'conversation_read',
+        (data: SocketConversationReadData) => {
+          if (data.conversationId === conversationId) {
+            logger.socket(
+              'Conversation read:',
+              data.messageIds.length,
+              'messages'
+            );
 
-          // Update all affected messages to read status
-          setMessages(prevMessages =>
-            prevMessages.map(message =>
-              data.messageIds.includes(message.id)
-                ? { ...message, status: 'read', read_at: data.readAt }
-                : message
-            )
-          );
+            // Update all affected messages to read status
+            setMessages(prevMessages =>
+              prevMessages.map(message =>
+                data.messageIds.includes(message.id)
+                  ? { ...message, status: 'read', read_at: data.readAt }
+                  : message
+              )
+            );
+          }
         }
-      }
-    );
+      );
 
     // Store unsubscribe functions locally for cleanup
     unsubscribersRef.current = [
@@ -625,7 +658,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   // Send a message
   const handleSendMessage = async (): Promise<void> => {
     const text = messageText.trim();
-    if (!text) return;
+    if (!text || !user) return;
 
     // Create optimistic message with correlation ID
     const correlationId = generateCorrelationId();
@@ -734,7 +767,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 
   // Get message status icon
   const getMessageStatusIcon = (message: ChatMessage): React.ReactNode => {
-    if (message.sender_id !== user.id) return null; // Only show status for own messages
+    if (!user || message.sender_id !== user.id) return null; // Only show status for own messages
 
     switch (message.status) {
       case 'sending':
@@ -819,7 +852,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   }: {
     item: ChatMessage;
   }): React.ReactElement => {
-    const isMyMessage = item.sender_id === user.id;
+    const isMyMessage = user && item.sender_id === user.id;
 
     return (
       <View
@@ -1024,10 +1057,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
               event.nativeEvent;
 
             // With inverted FlatList, check if user scrolled near the end (older messages)
-            const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y;
+            const distanceFromEnd =
+              contentSize.height - layoutMeasurement.height - contentOffset.y;
             const isNearOlderMessages = distanceFromEnd < 100;
-            
-            if (isNearOlderMessages && hasMoreMessages && !loadingOlderMessages) {
+
+            if (
+              isNearOlderMessages &&
+              hasMoreMessages &&
+              !loadingOlderMessages
+            ) {
               loadOlderMessages();
             }
 
@@ -1041,13 +1079,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
             if (shouldScrollToBottomRef.current) {
               // Use multiple attempts to ensure scroll happens reliably (inverted list scrolls to top)
               const scrollToBottom = () => {
-                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+                flatListRef.current?.scrollToOffset({
+                  offset: 0,
+                  animated: false,
+                });
                 isNearBottomRef.current = true;
               };
-              
+
               // Immediate attempt
               scrollToBottom();
-              
+
               // Backup attempts for reliability
               setTimeout(scrollToBottom, 10);
               setTimeout(scrollToBottom, 50);
@@ -1061,7 +1102,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           onContentSizeChange={() => {
             // Handle content size changes (new messages) with inverted list
             if (shouldScrollToBottomRef.current) {
-              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              flatListRef.current?.scrollToOffset({
+                offset: 0,
+                animated: false,
+              });
               isNearBottomRef.current = true;
             }
           }}
@@ -1118,7 +1162,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
 };
 
 // Wrap ChatScreen with ErrorBoundary for crash protection
-const ChatScreenWithErrorBoundary: React.FC<ChatScreenProps> = (props) => (
+const ChatScreenWithErrorBoundary: React.FC<ChatScreenProps> = props => (
   <ErrorBoundary
     onError={(error, errorInfo) => {
       logger.error('CHAT', 'ChatScreen crashed:', error, errorInfo);

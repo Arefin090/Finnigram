@@ -1,7 +1,40 @@
 /**
  * Retry Service - Handles network failures with smart retry logic
  */
+import logger from './loggerConfig';
+
+// Type definitions
+interface RetryOptions {
+  maxRetries?: number;
+  baseDelay?: number;
+  maxDelay?: number;
+  backoffFactor?: number;
+  retryOn?: number[];
+  onRetry?: ((error: Error, attempt: number) => void) | null;
+}
+
+interface RetryUntilOptions {
+  maxRetries?: number;
+  delay?: number;
+  timeout?: number;
+}
+
+interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  resetTimeout?: number;
+  monitoringWindow?: number;
+}
+
+interface NetworkAwareConfig {
+  maxRetries: number;
+  baseDelay: number;
+}
+
+type NetworkQuality = 'excellent' | 'good' | 'fair' | 'poor' | 'offline';
+
 class RetryService {
+  private defaultOptions: Required<RetryOptions>;
+
   constructor() {
     this.defaultOptions = {
       maxRetries: 3,
@@ -16,24 +49,27 @@ class RetryService {
   /**
    * Execute a function with exponential backoff retry
    */
-  async executeWithRetry(fn, options = {}) {
+  async executeWithRetry<T>(
+    fn: () => Promise<T>,
+    options: RetryOptions = {}
+  ): Promise<T> {
     const config = { ...this.defaultOptions, ...options };
-    let lastError;
+    let lastError: Error = new Error('Unknown error');
 
     for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
       try {
-        console.log(
+        logger.network(
           `Executing attempt ${attempt + 1}/${config.maxRetries + 1}`
         );
         const result = await fn();
 
         if (attempt > 0) {
-          console.log(`Success after ${attempt} retries`);
+          logger.network(`Success after ${attempt} retries`);
         }
 
         return result;
-      } catch (error) {
-        lastError = error;
+      } catch (error: unknown) {
+        lastError = error as Error;
 
         // Don't retry on the last attempt
         if (attempt === config.maxRetries) {
@@ -41,9 +77,9 @@ class RetryService {
         }
 
         // Check if we should retry this error
-        if (!this.shouldRetry(error, config)) {
-          console.log('Error not retryable:', error.message);
-          throw error;
+        if (!this.shouldRetry(lastError, config)) {
+          logger.network('Error not retryable:', lastError.message);
+          throw lastError;
         }
 
         // Calculate delay with exponential backoff and jitter
@@ -55,42 +91,50 @@ class RetryService {
         // Add jitter to prevent thundering herd
         const jitteredDelay = delay + Math.random() * 1000;
 
-        console.log(`Attempt ${attempt + 1} failed: ${error.message}`);
-        console.log(`Retrying in ${Math.round(jitteredDelay)}ms...`);
+        logger.network(`Attempt ${attempt + 1} failed: ${lastError.message}`);
+        logger.network(`Retrying in ${Math.round(jitteredDelay)}ms...`);
 
         // Call retry callback if provided
         if (config.onRetry) {
-          config.onRetry(error, attempt + 1);
+          config.onRetry(lastError, attempt + 1);
         }
 
         await this.delay(jitteredDelay);
       }
     }
 
-    console.log(`All ${config.maxRetries + 1} attempts failed`);
+    logger.network(`All ${config.maxRetries + 1} attempts failed`);
     throw lastError;
   }
 
   /**
    * Determine if an error should be retried
    */
-  shouldRetry(error, config) {
+  shouldRetry(error: Error, config: Required<RetryOptions>): boolean {
+    const errorWithCode = error as Error & {
+      code?: string;
+      response?: { status?: number };
+    };
+
     // Network errors
     if (
-      error.code === 'NETWORK_ERROR' ||
+      errorWithCode.code === 'NETWORK_ERROR' ||
       error.message.includes('Network Error')
     ) {
       return true;
     }
 
     // Timeout errors
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+    if (
+      errorWithCode.code === 'ECONNABORTED' ||
+      error.message.includes('timeout')
+    ) {
       return true;
     }
 
     // HTTP status codes
-    if (error.response && error.response.status) {
-      return config.retryOn.includes(error.response.status);
+    if (errorWithCode.response && errorWithCode.response.status) {
+      return config.retryOn.includes(errorWithCode.response.status);
     }
 
     // Unknown errors - don't retry to be safe
@@ -100,14 +144,18 @@ class RetryService {
   /**
    * Simple delay helper
    */
-  delay(ms) {
+  delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
    * Retry with custom condition
    */
-  async retryUntil(fn, condition, options = {}) {
+  async retryUntil<T>(
+    fn: () => Promise<T>,
+    condition: (result: T) => boolean,
+    options: RetryUntilOptions = {}
+  ): Promise<T> {
     const config = {
       maxRetries: 10,
       delay: 1000,
@@ -130,14 +178,17 @@ class RetryService {
           return result;
         }
 
-        console.log(`Attempt ${attempt + 1}: Condition not met, retrying...`);
+        logger.network(
+          `Attempt ${attempt + 1}: Condition not met, retrying...`
+        );
         await this.delay(config.delay);
-      } catch (error) {
+      } catch (error: unknown) {
         if (attempt === config.maxRetries) {
           throw error;
         }
 
-        console.log(`Attempt ${attempt + 1} failed: ${error.message}`);
+        const err = error as Error;
+        logger.network(`Attempt ${attempt + 1} failed: ${err.message}`);
         await this.delay(config.delay);
       }
     }
@@ -148,7 +199,10 @@ class RetryService {
   /**
    * Circuit breaker pattern for preventing cascade failures
    */
-  createCircuitBreaker(fn, options = {}) {
+  createCircuitBreaker<T extends unknown[], R>(
+    fn: (...args: T) => Promise<R>,
+    options: CircuitBreakerOptions = {}
+  ): (...args: T) => Promise<R> {
     const config = {
       failureThreshold: 5,
       resetTimeout: 60000, // 1 minute
@@ -161,7 +215,7 @@ class RetryService {
     let lastFailureTime = 0;
     let successCount = 0;
 
-    return async (...args) => {
+    return async (...args: T): Promise<R> => {
       const now = Date.now();
 
       // Reset failure count after monitoring window
@@ -174,7 +228,7 @@ class RetryService {
         if (now - lastFailureTime > config.resetTimeout) {
           state = 'HALF_OPEN';
           successCount = 0;
-          console.log('Circuit breaker: HALF_OPEN');
+          logger.network('Circuit breaker: HALF_OPEN');
         } else {
           throw new Error('Circuit breaker is OPEN - service unavailable');
         }
@@ -190,21 +244,21 @@ class RetryService {
           if (successCount >= 3) {
             state = 'CLOSED';
             failures = 0;
-            console.log('Circuit breaker: CLOSED');
+            logger.network('Circuit breaker: CLOSED');
           }
         }
 
         return result;
-      } catch (error) {
+      } catch (error: unknown) {
         failures++;
         lastFailureTime = now;
 
         if (state === 'HALF_OPEN') {
           state = 'OPEN';
-          console.log('Circuit breaker: OPEN (failed during half-open)');
+          logger.network('Circuit breaker: OPEN (failed during half-open)');
         } else if (failures >= config.failureThreshold) {
           state = 'OPEN';
-          console.log('Circuit breaker: OPEN (threshold exceeded)');
+          logger.network('Circuit breaker: OPEN (threshold exceeded)');
         }
 
         throw error;
@@ -215,7 +269,7 @@ class RetryService {
   /**
    * Get network quality indicator
    */
-  async getNetworkQuality() {
+  async getNetworkQuality(): Promise<NetworkQuality> {
     try {
       const startTime = Date.now();
       // Simple ping test
@@ -229,7 +283,7 @@ class RetryService {
       if (duration < 300) return 'good';
       if (duration < 1000) return 'fair';
       return 'poor';
-    } catch (error) {
+    } catch {
       return 'offline';
     }
   }
@@ -237,7 +291,7 @@ class RetryService {
   /**
    * Network-aware retry configuration
    */
-  async getNetworkAwareConfig() {
+  async getNetworkAwareConfig(): Promise<NetworkAwareConfig> {
     const quality = await this.getNetworkQuality();
 
     switch (quality) {

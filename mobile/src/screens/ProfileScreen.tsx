@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -15,36 +14,34 @@ import { useAuth } from '../context/AuthContext';
 import socketService from '../services/socket';
 import logger from '../services/loggerConfig';
 
-const { width } = Dimensions.get('window');
-
-const ProfileScreen = () => {
+const ProfileScreen: React.FC = () => {
   const { user, logout } = useAuth();
 
-  const handleLogout = async () => {
+  const handleLogout = async (): Promise<void> => {
     logger.auth('Logout button pressed');
 
     try {
       logger.auth('Performing logout...');
       const result = await logout();
       logger.auth('Logout completed:', result);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('AUTH', 'Logout error:', error);
     }
   };
 
-  const handleQuickAction = action => {
+  const handleQuickAction = (action: string): void => {
     Alert.alert(
       'Coming Soon',
       `${action} functionality will be available soon!`
     );
   };
 
-  const getConnectionStatus = () => {
+  const getConnectionStatus = (): string => {
     const status = socketService.getConnectionStatus();
     return status.isConnected ? 'Connected' : 'Disconnected';
   };
 
-  const getInitials = name => {
+  const getInitials = (name: string | undefined): string => {
     return name
       ? name
           .split(' ')
@@ -455,7 +452,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 3,
-    cursor: 'pointer',
   },
   logoutText: {
     fontSize: 16,
