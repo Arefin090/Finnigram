@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, StackScreenProps } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,34 +16,57 @@ import ChatScreen from './src/screens/ChatScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import UserSearchScreen from './src/screens/UserSearchScreen';
 import LoadingScreen from './src/components/LoadingScreen';
+import { type User } from './src/services/api';
 
-const Stack = createStackNavigator();
+// Navigation param types
+type AuthStackParamList = {
+  Login: undefined;
+  Register: undefined;
+};
+
+type ChatStackParamList = {
+  Conversations: undefined;
+  Chat: {
+    conversationId: number;
+    conversationName?: string;
+    participants?: User[];
+  };
+  UserSearch: undefined;
+};
+
+const AuthStack = createStackNavigator<AuthStackParamList>();
+const ChatStackNav = createStackNavigator<ChatStackParamList>();
 const Tab = createBottomTabNavigator();
 
+// Wrapper component to match ChatScreen props
+const ChatScreenWrapper: React.FC<StackScreenProps<ChatStackParamList, 'Chat'>> = (props) => {
+  return <ChatScreen {...props} />;
+};
+
 // Auth Stack - for login/register
-const AuthStack: React.FC = () => (
-  <Stack.Navigator
+const AuthStackComponent: React.FC = () => (
+  <AuthStack.Navigator
     screenOptions={{
       headerShown: false,
       cardStyle: { backgroundColor: '#f8f9fa' },
     }}
   >
-    <Stack.Screen name="Login" component={LoginScreen} />
-    <Stack.Screen name="Register" component={RegisterScreen} />
-  </Stack.Navigator>
+    <AuthStack.Screen name="Login" component={LoginScreen} />
+    <AuthStack.Screen name="Register" component={RegisterScreen} />
+  </AuthStack.Navigator>
 );
 
 // Chat Stack - for conversations and chat
 const ChatStack: React.FC = () => (
-  <Stack.Navigator
+  <ChatStackNav.Navigator
     screenOptions={{
       headerShown: false,
     }}
   >
-    <Stack.Screen name="Conversations" component={ConversationsScreen} />
-    <Stack.Screen name="Chat" component={ChatScreen as any} />
-    <Stack.Screen name="UserSearch" component={UserSearchScreen} />
-  </Stack.Navigator>
+    <ChatStackNav.Screen name="Conversations" component={ConversationsScreen} />
+    <ChatStackNav.Screen name="Chat" component={ChatScreenWrapper} />
+    <ChatStackNav.Screen name="UserSearch" component={UserSearchScreen} />
+  </ChatStackNav.Navigator>
 );
 
 // Main Tab Navigator
@@ -90,7 +113,7 @@ const AppNavigator: React.FC = () => {
           </ChatProvider>
         </ThemeProvider>
       ) : (
-        <AuthStack />
+        <AuthStackComponent />
       )}
     </NavigationContainer>
   );

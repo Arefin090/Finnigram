@@ -3,7 +3,6 @@ import {
   View,
   Text,
   FlatList,
-  TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { messageApiExports, type User, type Message } from '../services/api';
@@ -20,6 +18,8 @@ import socketService from '../services/socket';
 import messageCache from '../utils/messageCache';
 import logger from '../services/loggerConfig';
 import ErrorBoundary from '../components/ErrorBoundary';
+import MessageInput from '../components/chat/MessageInput';
+import MessageList from '../components/chat/MessageList';
 import { styles } from './ChatScreen.styles';
 
 // Types for route params and navigation
@@ -759,136 +759,67 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     }
   };
 
-  // Format message time
-  const formatMessageTime = (timestamp: string): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Handle scroll events
+  const handleScroll = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      contentSize: { height: number };
+      layoutMeasurement: { height: number };
+    };
+  }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+
+    // With inverted FlatList, check if user scrolled near the end (older messages)
+    const distanceFromEnd =
+      contentSize.height - layoutMeasurement.height - contentOffset.y;
+    const isNearOlderMessages = distanceFromEnd < 100;
+
+    if (isNearOlderMessages && hasMoreMessages && !loadingOlderMessages) {
+      loadOlderMessages();
+    }
+
+    // With inverted list, near "bottom" (newest messages) is when scroll is near top
+    const distanceFromBottom = contentOffset.y;
+    isNearBottomRef.current = distanceFromBottom < 100;
   };
 
-  // Get message status icon
-  const getMessageStatusIcon = (message: ChatMessage): React.ReactNode => {
-    if (!user || message.sender_id !== user.id) return null; // Only show status for own messages
+  // Handle layout events
+  const handleLayout = () => {
+    // Immediate scroll when FlatList first renders
+    if (shouldScrollToBottomRef.current) {
+      // Use multiple attempts to ensure scroll happens reliably (inverted list scrolls to top)
+      const scrollToBottom = () => {
+        flatListRef.current?.scrollToOffset({
+          offset: 0,
+          animated: false,
+        });
+        isNearBottomRef.current = true;
+      };
 
-    switch (message.status) {
-      case 'sending':
-        // Clock icon - message being sent
-        return (
-          <Ionicons
-            name="time-outline"
-            size={14}
-            color="rgba(255, 255, 255, 0.5)"
-            style={styles.statusIcon}
-          />
-        );
+      // Immediate attempt
+      scrollToBottom();
 
-      case 'failed':
-        // Exclamation mark - message failed to send
-        return (
-          <Ionicons
-            name="alert-circle"
-            size={14}
-            color="#ff6b6b"
-            style={styles.statusIcon}
-          />
-        );
-
-      case 'sent':
-        // Single gray checkmark - message sent to server
-        return (
-          <Ionicons
-            name="checkmark"
-            size={14}
-            color="rgba(255, 255, 255, 0.6)"
-            style={styles.statusIcon}
-          />
-        );
-
-      case 'delivered':
-        // Double gray checkmarks - message delivered to recipient's device
-        return (
-          <View style={styles.statusIconContainer}>
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="rgba(255, 255, 255, 0.8)"
-              style={[styles.statusIcon, styles.doubleCheck]}
-            />
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="rgba(255, 255, 255, 0.8)"
-              style={[styles.statusIcon, styles.doubleCheckSecond]}
-            />
-          </View>
-        );
-
-      case 'read':
-        // Blue double checkmarks - message read by recipient (like WhatsApp)
-        return (
-          <View style={styles.statusIconContainer}>
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="#4facfe"
-              style={[styles.statusIcon, styles.doubleCheck]}
-            />
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="#4facfe"
-              style={[styles.statusIcon, styles.doubleCheckSecond]}
-            />
-          </View>
-        );
-
-      default:
-        return null;
+      // Backup attempts for reliability
+      setTimeout(scrollToBottom, 10);
+      setTimeout(scrollToBottom, 50);
+      setTimeout(() => {
+        scrollToBottom();
+        shouldScrollToBottomRef.current = false;
+        logger.debug('CHAT', 'Completed scroll to bottom sequence');
+      }, 100);
     }
   };
 
-  // Render message item
-  const renderMessage = ({
-    item,
-  }: {
-    item: ChatMessage;
-  }): React.ReactElement => {
-    const isMyMessage = user && item.sender_id === user.id;
-
-    return (
-      <View
-        style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessage : styles.otherMessage,
-        ]}
-      >
-        <View
-          style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-          ]}
-        >
-          <Text
-            style={[
-              styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.otherMessageText,
-            ]}
-          >
-            {item.content}
-          </Text>
-          <View style={styles.messageFooter}>
-            <Text
-              style={[
-                styles.messageTime,
-                isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
-              ]}
-            >
-              {formatMessageTime(item.created_at)}
-            </Text>
-            {getMessageStatusIcon(item)}
-          </View>
-        </View>
-      </View>
-    );
+  // Handle content size changes
+  const handleContentSizeChange = () => {
+    // Handle content size changes (new messages) with inverted list
+    if (shouldScrollToBottomRef.current) {
+      flatListRef.current?.scrollToOffset({
+        offset: 0,
+        animated: false,
+      });
+      isNearBottomRef.current = true;
+    }
   };
 
   // Render typing indicator with animated dots
@@ -1023,140 +954,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           </View>
         </View>
       ) : (
-        <FlatList
+        <MessageList
           ref={flatListRef}
-          data={[...messages].reverse()} // Reverse for inverted display
-          renderItem={renderMessage}
-          keyExtractor={(item, index) => {
-            // Use correlation ID for optimistic messages to ensure uniqueness
-            if (item.isOptimistic && item.correlationId) {
-              return `opt-${item.correlationId}`;
-            }
-            // Use message ID for real messages
-            if (item.id) {
-              return `msg-${item.id}`;
-            }
-            // Fallback for messages without ID (should rarely happen)
-            return `unknown-${index}-${item.created_at}-${Math.random().toString(36).substr(2, 5)}`;
-          }}
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContainer}
-          inverted={true} // Show newest at bottom naturally
-          ListHeaderComponent={renderTypingIndicator} // Typing dots appear at "top" of inverted list (bottom visually)
-          ListFooterComponent={() =>
-            loadingOlderMessages ? (
-              <View style={styles.loadingOlderContainer}>
-                <Text style={styles.loadingOlderText}>
-                  Loading older messages...
-                </Text>
-              </View>
-            ) : null
-          }
-          onScroll={event => {
-            const { contentOffset, contentSize, layoutMeasurement } =
-              event.nativeEvent;
-
-            // With inverted FlatList, check if user scrolled near the end (older messages)
-            const distanceFromEnd =
-              contentSize.height - layoutMeasurement.height - contentOffset.y;
-            const isNearOlderMessages = distanceFromEnd < 100;
-
-            if (
-              isNearOlderMessages &&
-              hasMoreMessages &&
-              !loadingOlderMessages
-            ) {
-              loadOlderMessages();
-            }
-
-            // With inverted list, near "bottom" (newest messages) is when scroll is near top
-            const distanceFromBottom = contentOffset.y;
-            isNearBottomRef.current = distanceFromBottom < 100;
-          }}
-          scrollEventThrottle={100}
-          onLayout={() => {
-            // Immediate scroll when FlatList first renders
-            if (shouldScrollToBottomRef.current) {
-              // Use multiple attempts to ensure scroll happens reliably (inverted list scrolls to top)
-              const scrollToBottom = () => {
-                flatListRef.current?.scrollToOffset({
-                  offset: 0,
-                  animated: false,
-                });
-                isNearBottomRef.current = true;
-              };
-
-              // Immediate attempt
-              scrollToBottom();
-
-              // Backup attempts for reliability
-              setTimeout(scrollToBottom, 10);
-              setTimeout(scrollToBottom, 50);
-              setTimeout(() => {
-                scrollToBottom();
-                shouldScrollToBottomRef.current = false;
-                logger.debug('CHAT', 'Completed scroll to bottom sequence');
-              }, 100);
-            }
-          }}
-          onContentSizeChange={() => {
-            // Handle content size changes (new messages) with inverted list
-            if (shouldScrollToBottomRef.current) {
-              flatListRef.current?.scrollToOffset({
-                offset: 0,
-                animated: false,
-              });
-              isNearBottomRef.current = true;
-            }
-          }}
-          ListEmptyComponent={() => (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No messages yet</Text>
-              <Text style={styles.emptySubtext}>Start the conversation!</Text>
-            </View>
-          )}
+          messages={messages}
+          user={user}
+          loading={false}
+          typingUsers={typingUsers}
+          onScroll={handleScroll}
+          onLayout={handleLayout}
+          onContentSizeChange={handleContentSizeChange}
+          renderSkeletonMessages={() => null}
+          renderTypingIndicator={renderTypingIndicator}
         />
       )}
 
-      <View style={styles.inputContainer}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Message..."
-            placeholderTextColor="#8E8E93"
-            value={messageText}
-            onChangeText={handleTextChange}
-            multiline
-            maxLength={4000}
-            editable={!sending}
-          />
-
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              messageText.trim()
-                ? styles.sendButtonActive
-                : styles.sendButtonInactive,
-            ]}
-            onPress={handleSendMessage}
-            disabled={!messageText.trim()}
-            activeOpacity={0.7}
-          >
-            {messageText.trim() ? (
-              <LinearGradient
-                colors={['#4facfe', '#00f2fe']}
-                style={styles.sendButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Ionicons name="send" size={18} color="#FFFFFF" />
-              </LinearGradient>
-            ) : (
-              <Ionicons name="send" size={18} color="#8E8E93" />
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
+      <MessageInput
+        messageText={messageText}
+        onChangeText={handleTextChange}
+        onSendMessage={handleSendMessage}
+        sending={sending}
+      />
     </KeyboardAvoidingView>
   );
 };

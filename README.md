@@ -9,6 +9,7 @@ Kicking off as a small personal project, slowly evolving with a vision of over-e
 Right now, Finnigram is a messaging app with real-time chat, but the bigger vision is way more ambitious - think of it as a private social ecosystem for the people who actually matter in your life.
 
 **Current MVP:**
+
 - **Private messaging** - real-time chat with delivery/read receipts
 - **Clean UI** - iOS-style design that doesn't hurt your eyes  
 - **Self-hosted** - runs on my own infrastructure, no big tech involved
@@ -19,6 +20,7 @@ Right now, Finnigram is a messaging app with real-time chat, but the bigger visi
 This is just the beginning. The end goal is to build something that combines the best parts of every social app, but private and focused on meaningful relationships:
 
 **Social Features:**
+
 - **Interactive events** - create hangouts, meetups, social gatherings
 - **Location-based features** - find friends nearby, suggest meetup spots
 - **Chat streaks** - gamify staying in touch with people you care about
@@ -26,12 +28,14 @@ This is just the beginning. The end goal is to build something that combines the
 - **Media sharing** - photos, files, stories, but only with your inner circle
 
 **Relationship Building:**
+
 - **AI-powered suggestions** - reminders about birthdays, anniversaries, important dates
 - **Emotional bonding tools** - features that help you be a better friend/partner/family member
 - **Personalized experiences** - the app learns what matters to your relationships
 - **Dating elements** - but only within your trusted network
 
 **Privacy & Control:**
+
 - **Fully customizable** - every aspect of your experience is under your control
 - **No algorithms** - you decide what you see and when
 - **Your data stays yours** - self-hosted, no surveillance capitalism
@@ -74,6 +78,7 @@ Mobile App (React Native + Expo)
 ```
 
 **Message Flow:**
+
 1. Client sends message → Message Service (REST)
 2. Message Service stores in PostgreSQL + publishes to Redis
 3. Realtime Service subscribes to Redis events
@@ -97,6 +102,7 @@ npm run dev:mobile
 Each service needs its own `.env` file. Check the individual service directories for what they need.
 
 **Database:**
+
 ```bash
 # Start local PostgreSQL and Redis
 docker-compose up -d postgres redis
@@ -107,6 +113,7 @@ The app is currently configured to hit the production servers by default (becaus
 ## Development
 
 **Code Quality Enforcement:**
+
 - **ESLint** with TypeScript strict rules (zero `any` types allowed)
 - **Prettier** for consistent code formatting
 - **Husky + lint-staged** for pre-commit quality checks
@@ -123,6 +130,7 @@ npm run build         # Build all services (includes Prisma generation)
 Pre-commit hooks automatically run linting and formatting. Code that doesn't pass quality checks cannot be committed.
 
 **Database Management:**
+
 ```bash
 # Generate Prisma client after schema changes
 npm run prisma:generate
@@ -137,6 +145,7 @@ Jest is configured but test coverage is still TODO. The infrastructure supports 
 ## Deployment
 
 Currently running on Railway:
+
 - User Service: Live and handling auth
 - Message Service: Storing all the conversations  
 - Realtime Service: WebSocket magic happening here
@@ -150,6 +159,7 @@ I got tired of mainstream social platforms optimizing for engagement instead of 
 The vision is simple: **technology should strengthen real relationships, not replace them.**
 
 What I wanted to build:
+
 1. **Complete control** - my data, my rules, my network
 2. **Meaningful connections** - features that help you stay close to people who matter
 3. **Privacy by design** - no tracking, no algorithms deciding what you see
