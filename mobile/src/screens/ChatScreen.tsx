@@ -493,15 +493,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
               );
 
               if (optimisticIndex !== -1) {
-                // Replace optimistic message with real message
-                newMessages = [...prevMessages];
-                newMessages[optimisticIndex] = {
+                // Replace optimistic message with real message, ensuring proper status progression
+                const realMessage: ChatMessage = {
                   ...(message as ChatMessage),
                   isOptimistic: false,
+                  status: 'sent', // Server confirmed message is sent
                 };
+                newMessages = [...prevMessages];
+                newMessages[optimisticIndex] = realMessage;
                 logger.debug(
                   'CHAT',
-                  'Replaced optimistic message with real message:',
+                  'Replaced optimistic message with real message (status: sent):',
                   message.id
                 );
               } else {
@@ -765,10 +767,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Get message status icon
+  // Get message status icon - Instagram/Messenger style (minimal icons)
   const getMessageStatusIcon = (message: ChatMessage): React.ReactNode => {
     if (!user || message.sender_id !== user.id) return null; // Only show status for own messages
 
+    // Only show status icons for failed messages and messages currently being sent
+    // This moves away from WhatsApp-style per-message icons to Instagram/Messenger style
     switch (message.status) {
       case 'sending':
         // Clock icon - message being sent
@@ -792,58 +796,54 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           />
         );
 
+      default:
+        // No individual message status icons for sent/delivered/read
+        // This will be replaced by conversation-level "Seen" indicator
+        return null;
+    }
+  };
+
+  // Get conversation-level status - Instagram/Messenger style
+  const getConversationStatus = (): { status: string; text: string } | null => {
+    if (!user || messages.length === 0) return null;
+
+    // Find the most recent message sent by the current user
+    const myMessages = messages.filter(
+      msg => msg.sender_id === user.id && !msg.isOptimistic
+    );
+    if (myMessages.length === 0) return null;
+
+    const latestMessage = myMessages[myMessages.length - 1];
+
+    switch (latestMessage.status) {
       case 'sent':
-        // Single gray checkmark - message sent to server
-        return (
-          <Ionicons
-            name="checkmark"
-            size={14}
-            color="rgba(255, 255, 255, 0.6)"
-            style={styles.statusIcon}
-          />
-        );
-
+        return { status: 'sent', text: 'Sent' };
       case 'delivered':
-        // Double gray checkmarks - message delivered to recipient's device
-        return (
-          <View style={styles.statusIconContainer}>
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="rgba(255, 255, 255, 0.8)"
-              style={[styles.statusIcon, styles.doubleCheck]}
-            />
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="rgba(255, 255, 255, 0.8)"
-              style={[styles.statusIcon, styles.doubleCheckSecond]}
-            />
-          </View>
-        );
-
+        return { status: 'delivered', text: 'Delivered' };
       case 'read':
-        // Blue double checkmarks - message read by recipient (like WhatsApp)
-        return (
-          <View style={styles.statusIconContainer}>
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="#4facfe"
-              style={[styles.statusIcon, styles.doubleCheck]}
-            />
-            <Ionicons
-              name="checkmark"
-              size={14}
-              color="#4facfe"
-              style={[styles.statusIcon, styles.doubleCheckSecond]}
-            />
-          </View>
-        );
-
+        return { status: 'read', text: 'Seen' };
       default:
         return null;
     }
+  };
+
+  // Render conversation status indicator
+  const renderConversationStatus = (): React.ReactElement | null => {
+    const status = getConversationStatus();
+    if (!status) return null;
+
+    return (
+      <View style={styles.conversationStatusContainer}>
+        <Text
+          style={[
+            styles.conversationStatusText,
+            status.status === 'read' && styles.conversationStatusSeenText,
+          ]}
+        >
+          {status.text}
+        </Text>
+      </View>
+    );
   };
 
   // Render message item
@@ -1117,6 +1117,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
           )}
         />
       )}
+
+      {/* Instagram/Messenger-style conversation status indicator */}
+      {renderConversationStatus()}
 
       <View style={styles.inputContainer}>
         <View style={styles.inputWrapper}>
