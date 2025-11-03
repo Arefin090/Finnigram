@@ -239,13 +239,10 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
   subscriber.subscribe('message_delivered', (message: string) => {
     const deliveryData: RedisMessageDeliveredMessage = JSON.parse(message);
 
-    // Broadcast delivery status to the conversation (excluding the user who marked it as delivered)
+    // Broadcast delivery status to all connected devices of conversation participants (excluding the user who marked it as delivered)
     const sockets = Array.from(io.sockets.sockets.values()).filter(socket => {
       const authSocket = socket as AuthenticatedSocket;
-      return (
-        authSocket.currentConversation === deliveryData.conversationId &&
-        authSocket.userId !== deliveryData.userId
-      );
+      return authSocket.userId !== deliveryData.userId;
     });
 
     sockets.forEach(socket => {
@@ -257,7 +254,7 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
     });
 
     logger.info(
-      `Broadcasted message delivery status for message ${deliveryData.messageId}`
+      `Broadcasted message delivery status for message ${deliveryData.messageId} to all connected devices`
     );
   });
 
@@ -265,13 +262,10 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
   subscriber.subscribe('message_read', (message: string) => {
     const readData: RedisMessageReadMessage = JSON.parse(message);
 
-    // Broadcast read status to the conversation (excluding the user who marked it as read)
+    // Broadcast read status to all connected devices of conversation participants (excluding the user who marked it as read)
     const sockets = Array.from(io.sockets.sockets.values()).filter(socket => {
       const authSocket = socket as AuthenticatedSocket;
-      return (
-        authSocket.currentConversation === readData.conversationId &&
-        authSocket.userId !== readData.userId
-      );
+      return authSocket.userId !== readData.userId;
     });
 
     sockets.forEach(socket => {
@@ -283,7 +277,7 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
     });
 
     logger.info(
-      `Broadcasted message read status for message ${readData.messageId}`
+      `Broadcasted message read status for message ${readData.messageId} to all connected devices`
     );
   });
 
@@ -291,13 +285,10 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
   subscriber.subscribe('conversation_read', (message: string) => {
     const readData: RedisConversationReadMessage = JSON.parse(message);
 
-    // Broadcast conversation read status to the conversation (excluding the user who marked it as read)
+    // Broadcast conversation read status to all connected devices of conversation participants (excluding the user who marked it as read)
     const sockets = Array.from(io.sockets.sockets.values()).filter(socket => {
       const authSocket = socket as AuthenticatedSocket;
-      return (
-        authSocket.currentConversation === readData.conversationId &&
-        authSocket.userId !== readData.userId
-      );
+      return authSocket.userId !== readData.userId;
     });
 
     sockets.forEach(socket => {
@@ -309,7 +300,7 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
     });
 
     logger.info(
-      `Broadcasted conversation read status for conversation ${readData.conversationId} (${readData.messageIds.length} messages)`
+      `Broadcasted conversation read status for conversation ${readData.conversationId} (${readData.messageIds.length} messages) to all connected devices`
     );
   });
 };

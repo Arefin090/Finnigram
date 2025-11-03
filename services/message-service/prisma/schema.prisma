@@ -21,26 +21,31 @@ model Conversation {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
   // Relations
-  participants ConversationParticipant[]
-  messages     Message[]
+  participants  ConversationParticipant[]
+  messages      Message[]
+  statusEvents  MessageStatusEvent[]
 
   @@map("conversations")
 }
 
 model ConversationParticipant {
-  id             Int       @id @default(autoincrement())
-  conversationId Int       @map("conversation_id")
-  userId         Int       @map("user_id")
-  role           String    @default("member") @db.VarChar(20)
-  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamp(6)
-  lastReadAt     DateTime? @map("last_read_at") @db.Timestamp(6)
+  id                 Int       @id @default(autoincrement())
+  conversationId     Int       @map("conversation_id")
+  userId             Int       @map("user_id")
+  role               String    @default("member") @db.VarChar(20)
+  joinedAt           DateTime  @default(now()) @map("joined_at") @db.Timestamp(6)
+  lastReadAt         DateTime? @map("last_read_at") @db.Timestamp(6)
+  lastReadMessageId  Int?      @map("last_read_message_id")
 
   // Relations
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lastReadMessage  Message?     @relation("ParticipantLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
 
   @@unique([conversationId, userId])
   @@index([userId])
   @@index([conversationId])
+  @@index([conversationId, lastReadMessageId], map: "idx_conversation_participants_last_read")
+  @@index([userId, lastReadMessageId], map: "idx_conversation_participants_user_last_read")
   @@map("conversation_participants")
 }
 
@@ -59,10 +64,12 @@ model Message {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   // Relations
-  conversation    Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  replyToMessage  Message?            @relation("MessageReplies", fields: [replyTo], references: [id], onDelete: SetNull)
-  replies         Message[]           @relation("MessageReplies")
-  attachments     MessageAttachment[]
+  conversation           Conversation              @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyToMessage         Message?                  @relation("MessageReplies", fields: [replyTo], references: [id], onDelete: SetNull)
+  replies                Message[]                 @relation("MessageReplies")
+  attachments            MessageAttachment[]
+  participantLastReads   ConversationParticipant[] @relation("ParticipantLastRead")
+  statusEvents           MessageStatusEvent[]
 
   @@index([conversationId])
   @@index([createdAt(sort: Desc)])
@@ -101,4 +108,25 @@ model UserProfile {
   @@index([userId])
   @@index([username])
   @@map("user_profiles")
+}
+
+model MessageStatusEvent {
+  id               Int       @id @default(autoincrement())
+  messageId        Int       @map("message_id")
+  conversationId   Int       @map("conversation_id")
+  userId           Int       @map("user_id")
+  status           String    @db.VarChar(20)
+  previousStatus   String?   @map("previous_status") @db.VarChar(20)
+  timestamp        DateTime  @default(now()) @db.Timestamp(6)
+  deviceId         String?   @map("device_id") @db.VarChar(255)
+  metadata         Json?
+
+  // Relations
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([messageId], map: "idx_message_status_events_message_id")
+  @@index([conversationId, userId], map: "idx_message_status_events_conversation_user")
+  @@index([timestamp(sort: Desc)], map: "idx_message_status_events_timestamp")
+  @@map("message_status_events")
 }
