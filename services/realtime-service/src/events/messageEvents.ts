@@ -14,6 +14,7 @@ import {
   MessageReactionData,
   UpdateStatusData,
   MessageServiceConversationResponse,
+  ConversationParticipant,
   Message,
   RedisPresenceMessage,
   RedisTypingMessage,
@@ -153,18 +154,51 @@ const handleMessageEvents = (io: Server, socket: AuthenticatedSocket): void => {
 // Handle Redis pub/sub events for message broadcasting
 const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
   // New message event
-  subscriber.subscribe('new_message', (message: string) => {
+  subscriber.subscribe('new_message', async (message: string) => {
     const messageData: Message = JSON.parse(message);
 
-    // Broadcast to all users in the conversation, including the sender
-    io.in(`conversation_${messageData.conversation_id}`).emit(
-      'new_message',
-      messageData
-    );
+    try {
+      // Get conversation participants from message service
+      const response = await axios.get<MessageServiceConversationResponse>(
+        `${MESSAGE_SERVICE_URL}/api/conversations/${messageData.conversation_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.MESSAGE_SERVICE_API_KEY || 'internal-service-key'}`,
+          },
+        }
+      );
 
-    logger.info(
-      `Broadcasted new message ${messageData.id} to conversation ${messageData.conversation_id} (including sender)`
-    );
+      const participantIds = response.data.participants.map(
+        (p: ConversationParticipant) => p.id
+      );
+
+      // Broadcast to all connected sockets of conversation participants
+      const allSockets = Array.from(io.sockets.sockets.values());
+      const participantSockets = allSockets.filter(socket => {
+        const authSocket = socket as AuthenticatedSocket;
+        return participantIds.includes(authSocket.userId);
+      });
+
+      participantSockets.forEach(socket => {
+        socket.emit('new_message', messageData);
+      });
+
+      logger.info(
+        `Broadcasted new message ${messageData.id} to ${participantSockets.length} connected participants of conversation ${messageData.conversation_id}`
+      );
+    } catch (error) {
+      logger.error('Error broadcasting new message to participants:', error);
+
+      // Fallback to room-based broadcasting
+      io.in(`conversation_${messageData.conversation_id}`).emit(
+        'new_message',
+        messageData
+      );
+
+      logger.info(
+        `Fallback: Broadcasted new message ${messageData.id} to conversation room ${messageData.conversation_id}`
+      );
+    }
   });
 
   // Message updated event
