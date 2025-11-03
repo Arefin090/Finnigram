@@ -295,6 +295,113 @@ class ConversationService {
     }
   }
 
+  // New conversation-level read tracking methods
+  async updateLastReadMessage(
+    conversationId: number,
+    userId: number,
+    messageId: number
+  ): Promise<void> {
+    try {
+      await this.prisma.conversationParticipant.update({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId,
+          },
+        },
+        data: {
+          lastReadMessageId: messageId,
+          lastReadAt: new Date(),
+        },
+      });
+
+      logger.info(
+        `Updated last read message for user ${userId} in conversation ${conversationId} to message ${messageId}`
+      );
+    } catch (error) {
+      logger.error('Error updating last read message:', error);
+      throw error;
+    }
+  }
+
+  async getUnreadCount(
+    conversationId: number,
+    userId: number
+  ): Promise<number> {
+    try {
+      const participant = await this.prisma.conversationParticipant.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId,
+          },
+        },
+        select: {
+          lastReadMessageId: true,
+        },
+      });
+
+      if (!participant?.lastReadMessageId) {
+        // No messages read yet, count all messages in conversation
+        return await this.prisma.message.count({
+          where: {
+            conversationId,
+            senderId: { not: userId }, // Don't count user's own messages
+            deletedAt: null,
+          },
+        });
+      }
+
+      // Count messages after the last read message
+      return await this.prisma.message.count({
+        where: {
+          conversationId,
+          id: { gt: participant.lastReadMessageId },
+          senderId: { not: userId }, // Don't count user's own messages
+          deletedAt: null,
+        },
+      });
+    } catch (error) {
+      logger.error('Error getting unread count:', error);
+      throw error;
+    }
+  }
+
+  async getConversationReadStatus(
+    conversationId: number,
+    userId: number
+  ): Promise<{
+    lastReadMessageId: number | null;
+    lastReadAt: Date | null;
+    unreadCount: number;
+  }> {
+    try {
+      const participant = await this.prisma.conversationParticipant.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId,
+          },
+        },
+        select: {
+          lastReadMessageId: true,
+          lastReadAt: true,
+        },
+      });
+
+      const unreadCount = await this.getUnreadCount(conversationId, userId);
+
+      return {
+        lastReadMessageId: participant?.lastReadMessageId || null,
+        lastReadAt: participant?.lastReadAt || null,
+        unreadCount,
+      };
+    } catch (error) {
+      logger.error('Error getting conversation read status:', error);
+      throw error;
+    }
+  }
+
   async isParticipant(
     conversationId: number,
     userId: number
