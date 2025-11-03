@@ -260,3 +260,12 @@ export interface UserDeletedEvent extends BaseUserEvent {
 }
 
 export type UserEvent = UserCreatedEvent | UserUpdatedEvent | UserDeletedEvent;
+
+// Re-export message status types
+export * from './messageStatus';
+
+// Re-export OfflineStatusQueue types
+export type {
+  StatusSyncRequest,
+  StatusSyncResponse,
+} from '../services/OfflineStatusQueue';
