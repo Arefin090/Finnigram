@@ -158,14 +158,9 @@ const handleRedisEvents = (io: Server, subscriber: RedisClientType): void => {
     const messageData: Message = JSON.parse(message);
 
     try {
-      // Get conversation participants from message service
+      // Get conversation participants from message service (internal endpoint)
       const response = await axios.get<MessageServiceConversationResponse>(
-        `${MESSAGE_SERVICE_URL}/api/conversations/${messageData.conversation_id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.MESSAGE_SERVICE_API_KEY || 'internal-service-key'}`,
-          },
-        }
+        `${MESSAGE_SERVICE_URL}/api/conversations/internal/${messageData.conversation_id}/participants`
       );
 
       const participantIds = response.data.participants.map(

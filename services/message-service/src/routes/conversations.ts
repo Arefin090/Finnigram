@@ -174,6 +174,32 @@ router.post(
   }
 );
 
+// Internal endpoint for getting conversation participants (no auth required)
+router.get(
+  '/internal/:id/participants',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      const conversation = await conversationService.findById(parseInt(id));
+      if (!conversation) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      const participants =
+        await conversationService.getParticipantsWithUserDetails(parseInt(id));
+
+      res.json({
+        conversation,
+        participants,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Get conversation details
 router.get(
   '/:id',
