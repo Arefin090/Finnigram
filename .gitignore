@@ -60,6 +60,3 @@ docker-compose.override.yml
 # Mobile
 mobile/.expo/
 mobile/expo-env.d.ts
-
-# Claude instructions (don't commit)
-CLAUDE.md

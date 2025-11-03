@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import ConversationService from '../services/ConversationService';
-import OfflineStatusQueue from '../services/OfflineStatusQueue';
 import { verifyToken } from '../middleware/auth';
 import {
   publishMessage,
@@ -8,17 +7,11 @@ import {
   cacheUserConversations,
 } from '../utils/redis';
 import logger from '../utils/logger';
-import {
-  CreateConversationRequest,
-  ApiResponse,
-  User,
-  StatusSyncRequest,
-} from '../types';
+import { CreateConversationRequest, ApiResponse, User } from '../types';
 import axios from 'axios';
 
 const router = Router();
 const conversationService = new ConversationService();
-const offlineStatusQueue = new OfflineStatusQueue();
 
 const USER_SERVICE_URL =
   process.env.USER_SERVICE_URL || 'http://localhost:3001';
@@ -301,7 +294,7 @@ router.delete(
   }
 );
 
-// Mark conversation as read (legacy endpoint - kept for backward compatibility)
+// Mark conversation as read
 router.patch(
   '/:id/read',
   verifyToken,
@@ -323,177 +316,6 @@ router.patch(
       await conversationService.updateLastRead(parseInt(id), userId);
 
       res.json({ message: 'Conversation marked as read' } as ApiResponse);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// New conversation-level read tracking endpoints
-
-// Mark conversation as read up to a specific message (Instagram/Messenger style)
-router.patch(
-  '/:id/read/:messageId',
-  verifyToken,
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { id, messageId } = req.params;
-      const userId = req.user.id;
-
-      // Check if user is participant
-      const isParticipant = await conversationService.isParticipant(
-        parseInt(id),
-        userId
-      );
-      if (!isParticipant) {
-        res.status(403).json({ error: 'Access denied' });
-        return;
-      }
-
-      await conversationService.updateLastReadMessage(
-        parseInt(id),
-        userId,
-        parseInt(messageId)
-      );
-
-      // Publish conversation read event for real-time updates
-      await publishMessage('conversation_read_status', {
-        conversationId: parseInt(id),
-        userId,
-        lastReadMessageId: parseInt(messageId),
-        timestamp: new Date().toISOString(),
-      });
-
-      res.json({
-        message: 'Conversation read status updated',
-        lastReadMessageId: parseInt(messageId),
-      } as ApiResponse);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Get conversation read status and unread count
-router.get(
-  '/:id/status',
-  verifyToken,
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const userId = req.user.id;
-
-      // Check if user is participant
-      const isParticipant = await conversationService.isParticipant(
-        parseInt(id),
-        userId
-      );
-      if (!isParticipant) {
-        res.status(403).json({ error: 'Access denied' });
-        return;
-      }
-
-      const readStatus = await conversationService.getConversationReadStatus(
-        parseInt(id),
-        userId
-      );
-
-      res.json({
-        conversationId: parseInt(id),
-        ...readStatus,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Get unread count for a conversation
-router.get(
-  '/:id/unread-count',
-  verifyToken,
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const userId = req.user.id;
-
-      // Check if user is participant
-      const isParticipant = await conversationService.isParticipant(
-        parseInt(id),
-        userId
-      );
-      if (!isParticipant) {
-        res.status(403).json({ error: 'Access denied' });
-        return;
-      }
-
-      const unreadCount = await conversationService.getUnreadCount(
-        parseInt(id),
-        userId
-      );
-
-      res.json({
-        conversationId: parseInt(id),
-        unreadCount,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Status synchronization endpoint for offline reconciliation
-router.post(
-  '/sync-status',
-  verifyToken,
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const syncRequest: StatusSyncRequest = {
-        userId: req.user.id,
-        deviceId: req.body.deviceId,
-        lastSyncTimestamp: req.body.lastSyncTimestamp
-          ? new Date(req.body.lastSyncTimestamp)
-          : undefined,
-        statusUpdates: req.body.statusUpdates || [],
-      };
-
-      // Validate request
-      if (!Array.isArray(syncRequest.statusUpdates)) {
-        res.status(400).json({ error: 'statusUpdates must be an array' });
-        return;
-      }
-
-      logger.info(
-        `Status sync request from user ${syncRequest.userId}, device ${syncRequest.deviceId}, ${syncRequest.statusUpdates.length} updates`
-      );
-
-      // Process synchronization
-      const syncResponse =
-        await offlineStatusQueue.syncStatusUpdates(syncRequest);
-
-      res.json({
-        message: 'Status synchronization completed',
-        data: syncResponse,
-      });
-    } catch (error) {
-      logger.error('Error during status synchronization:', error);
-      next(error);
-    }
-  }
-);
-
-// Get queue status for monitoring (admin endpoint)
-router.get(
-  '/queue-status',
-  verifyToken,
-  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const queueStatus = await offlineStatusQueue.getQueueStatus();
-
-      res.json({
-        message: 'Queue status retrieved',
-        data: queueStatus,
-      });
     } catch (error) {
       next(error);
     }

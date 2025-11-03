@@ -292,19 +292,4 @@ export const styles = StyleSheet.create({
     color: '#8E8E93',
     fontWeight: '500',
   },
-
-  // Instagram/Messenger-style conversation status indicator
-  conversationStatusContainer: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  conversationStatusText: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '400',
-  },
-  conversationStatusSeenText: {
-    color: '#007AFF', // Blue color for "Seen" status like Instagram
-  },
 });
